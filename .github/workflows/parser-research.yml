@@ -15,4 +15,4 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e ".[dev]" gerbonara==1.6.3 numpy==2.2.6 shapely==2.1.2
       - run: python -c "import gerbonara, numpy, shapely"
-      - run: python -m pytest tests/test_parser_research.py tests/test_parser_geometry.py tests/test_copper_composition.py tests/test_path_order.py -v -s
+      - run: python -m pytest tests/test_parser_research.py tests/test_parser_geometry.py tests/test_copper_composition.py tests/test_path_order.py tests/test_gerbonara_adapter.py -v -s
