@@ -14,7 +14,7 @@ from pcb_studio.infrastructure.cam.gcode_viewer import viewer_data
 
 
 def build_demo(root: Path):
-    """Load the synthetic board from an explicit fixture directory.""
+    # Load the synthetic board from an explicit fixture directory.
     project=import_project(GerbonaraImporter(),"Synthetic board 30 x 20 mm",
                            copper_files=((root/"bottom.gbr","bottom"),),
                            drill_files=(root/"drills.drl",),outline_file=root/"outline.gbr")

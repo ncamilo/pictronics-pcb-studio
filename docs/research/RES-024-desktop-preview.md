@@ -1,3 +1,5 @@
 # RES-024 — Native desktop CAM preview
 
 Status: submitted for CI. Previous commit f9db42d passed all workflows, including 248 research tests per OS. Native Qt widgets and QPainter show the independently validated synthetic readback data, no embedded web engine. Source-checkout demo button imports the actual existing fixture using a shared infrastructure demo builder. Desktop tree, stage filter, rapid toggle, event navigation, XYZ readout and diagnostics. Machine simulator controls retained; physical hardware disabled. UI remains English-first. No arbitrary project loading yet, no physical collision checks, no executable G-code, no controller connection. Offscreen Qt smoke/interaction tests and screenshot artifact on both OS. Performance for large files and interactive native platform verification remain pending. Main unchanged.
+
+Initial CI exposed a malformed docstring in demo.py, preventing the shared demo import and causing three desktop interaction failures. Replaced it with a regular comment and added a fixture assertion that reports the load error before exercising controls. Retest pending.

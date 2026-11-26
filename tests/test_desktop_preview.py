@@ -23,6 +23,7 @@ def window(app):
     w.show()
     w.load.click()
     app.processEvents()
+    assert w.data is not None, w.message.text()
     yield w
     w.close()
 
