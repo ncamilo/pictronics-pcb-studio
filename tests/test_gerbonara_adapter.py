@@ -220,3 +220,46 @@ def test_unsupported_thermal_macro(tmp_path):
     p = gerber(tmp_path, "%AMTHERM*7,0,0,4,2,0.5,0*%\n%ADD10THERM*%\nD10*\nX0Y0D03*")
     with pytest.raises(PCBImportError):
         GerbonaraImporter().copper(p, "top")
+
+# Analytic fixtures, independent of the parser's rectangle conversion.
+@pytest.mark.parametrize("primitive,bounds", [
+    ("20,1,2,0,0,4,0,0", (10,19,14,21)),
+    ("20,1,2,0,0,4,0,90", (9,20,11,24)),
+    ("21,1,4,2,3,1,90", (8,21,10,25)),
+])
+def test_macro_rectangular_primitives(tmp_path, primitive, bounds):
+    p=gerber(tmp_path, f"%AMRECT*{primitive}*%\\n%ADD10RECT*%\\nD10*\\nX10000000Y20000000D03*".replace("\\n","\n"))
+    layer=GerbonaraImporter().copper(p,"bottom")
+    poly=Polygon(layer.polygons[0].exterior,layer.polygons[0].holes)
+    assert poly.area==pytest.approx(8)
+    assert poly.bounds==pytest.approx(bounds,abs=1e-8)
+
+
+def test_macro_diagonal_vector_line(tmp_path):
+    from shapely.geometry import LineString
+    p=gerber(tmp_path,"%AMDIAG*20,1,0.8,0,0,3,4,0*%\n%ADD10DIAG*%\nD10*\nX10000000Y20000000D03*")
+    layer=GerbonaraImporter().copper(p,"bottom")
+    actual=Polygon(layer.polygons[0].exterior,layer.polygons[0].holes)
+    expected=LineString([(10,20),(13,24)]).buffer(0.4,cap_style="flat")
+    assert actual.symmetric_difference(expected).area<1e-8
+
+
+def test_rounded_pad_vector_edges(tmp_path):
+    from shapely.geometry import box
+    # Equivalent geometric construction to a rounded 4 x 2 mm KiCad pad.
+    corners=[(-1.5,-0.5),(1.5,-0.5),(1.5,0.5),(-1.5,0.5)]
+    outline="4,1,4,"+",".join(str(v) for pt in corners+[corners[0]] for v in pt)+",0"
+    circles=[f"1,1,1,{x},{y},0" for x,y in corners]
+    edges=[f"20,1,1,{a[0]},{a[1]},{b[0]},{b[1]},0" for a,b in zip(corners,corners[1:]+corners[:1])]
+    p=gerber(tmp_path,"%AMROUND*"+"*".join([outline,*circles,*edges])+"*%\n%ADD10ROUND*%\nD10*\nX10000000Y20000000D03*")
+    layer=GerbonaraImporter().copper(p,"bottom")
+    assert len(layer.polygons)==1
+    actual=Polygon(layer.polygons[0].exterior,layer.polygons[0].holes)
+    expected=box(8.5,19.5,11.5,20.5).buffer(0.5,quad_segs=64)
+    assert actual.symmetric_difference(expected).area<1e-8
+
+
+def test_macro_diagnostic_names_file_and_type(tmp_path):
+    p=gerber(tmp_path,"%AMTHERM*7,0,0,4,2,0.5,0*%\n%ADD10THERM*%\nD10*\nX0Y0D03*")
+    with pytest.raises(PCBImportError,match=r"layer\.gbr.*THERM.*Thermal"):
+        GerbonaraImporter().copper(p,"top")

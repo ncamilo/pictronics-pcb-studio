@@ -94,7 +94,7 @@ def _primitive_geometry(p):
         return _arc_centerline(p).buffer(p.width / 2, quad_segs=QUAD_SEGS)
     if kind == "Rectangle" and p.w > 0 and p.h > 0:
         shape = box(p.x-p.w/2, p.y-p.h/2, p.x+p.w/2, p.y+p.h/2)
-        return affinity.rotate(shape, p.rotation, origin=(p.x, p.y), use_radians=True)
+        return affinity.rotate(shape, -p.rotation, origin=(p.x, p.y), use_radians=True)
     if kind == "ArcPoly" and not any(p.arc_centers):
         return Polygon(p.outline)
     raise PCBImportError(f"Unsupported graphic primitive: {kind}")
@@ -105,10 +105,13 @@ def _flash_geometry(obj):
     aperture = obj.aperture
     kind = _name(aperture)
     if kind == "ApertureMacroInstance":
-        # Only explicitly reviewed macro primitives. Do not infer correctness
-        # of thermal/moire or rotated rectangle primitives from their output.
-        if any(_name(p) not in {"Circle", "Outline"} for p in aperture.macro.primitives):
-            raise PCBImportError("Unsupported aperture macro primitive")
+        # Support KiCad rounded and rotated pad macros; keep unreviewed
+        # thermal/moire and other primitive types fail-closed.
+        unsupported = sorted({_name(p) for p in aperture.macro.primitives}
+                              - {"Circle", "Outline", "VectorLine", "CenterLine"})
+        if unsupported:
+            raise PCBImportError(f"Unsupported aperture macro {aperture.macro.name}: "
+                                 + ", ".join(unsupported))
     elif kind not in {"CircleAperture", "RectangleAperture", "ObroundAperture"}:
         raise PCBImportError("Unsupported flash aperture")
     # Ask the aperture for a DARK stamp, regardless of the object's polarity.
@@ -140,7 +143,11 @@ class GerbonaraImporter:
             for obj in layer.objects:
                 kind = _name(obj)
                 if kind == "Flash":
-                    operations.append((_flash_geometry(obj), bool(obj.polarity_dark)))
+                    try:
+                        stamp = _flash_geometry(obj)
+                    except PCBImportError as exc:
+                        raise PCBImportError(f"{Path(path).name}, flash at {_point(obj, 'x', 'y')} mm: {exc}") from exc
+                    operations.append((stamp, bool(obj.polarity_dark)))
                     continue
                 elif kind in ("Line", "Arc"):
                     _solid_aperture(obj, {"CircleAperture"})
