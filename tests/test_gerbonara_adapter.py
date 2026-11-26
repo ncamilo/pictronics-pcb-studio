@@ -263,3 +263,16 @@ def test_macro_diagnostic_names_file_and_type(tmp_path):
     p=gerber(tmp_path,"%AMTHERM*7,0,0,4,2,0.5,0*%\n%ADD10THERM*%\nD10*\nX0Y0D03*")
     with pytest.raises(PCBImportError,match=r"layer\.gbr.*THERM.*Thermal"):
         GerbonaraImporter().copper(p,"top")
+
+@pytest.mark.parametrize("primitive,local,angle", [
+    ("21,1,4,2,3,1,30", (1,0,5,2),30),
+    ("20,1,2,0,0,4,0,30", (0,-1,4,1),30),
+])
+def test_macro_nonorthogonal_rotation(tmp_path,primitive,local,angle):
+    from shapely import affinity
+    from shapely.geometry import box
+    p=gerber(tmp_path,f"%AMROT*{primitive}*%\n%ADD10ROT*%\nD10*\nX10000000Y20000000D03*")
+    layer=GerbonaraImporter().copper(p,"bottom")
+    actual=Polygon(layer.polygons[0].exterior,layer.polygons[0].holes)
+    expected=affinity.translate(affinity.rotate(box(*local),angle,origin=(0,0)),10,20)
+    assert actual.symmetric_difference(expected).area<1e-8, (actual.wkt,expected.wkt)

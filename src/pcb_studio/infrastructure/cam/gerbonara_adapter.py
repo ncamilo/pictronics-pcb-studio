@@ -94,7 +94,7 @@ def _primitive_geometry(p):
         return _arc_centerline(p).buffer(p.width / 2, quad_segs=QUAD_SEGS)
     if kind == "Rectangle" and p.w > 0 and p.h > 0:
         shape = box(p.x-p.w/2, p.y-p.h/2, p.x+p.w/2, p.y+p.h/2)
-        return affinity.rotate(shape, -p.rotation, origin=(p.x, p.y), use_radians=True)
+        return affinity.rotate(shape, p.rotation, origin=(p.x, p.y), use_radians=True)
     if kind == "ArcPoly" and not any(p.arc_centers):
         return Polygon(p.outline)
     raise PCBImportError(f"Unsupported graphic primitive: {kind}")
