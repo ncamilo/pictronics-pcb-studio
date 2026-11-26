@@ -11,6 +11,7 @@ class BoardWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.project = None
+        self.cam = None
         self.hidden_layers = set()
         self.viewport = None
         self.show_grid = True
@@ -22,6 +23,7 @@ class BoardWidget(QWidget):
 
     def set_project(self, project):
         self.project = project
+        self.cam = None
         self.hidden_layers.clear()
         self.measure_points.clear()
         self.measuring=False
@@ -29,6 +31,12 @@ class BoardWidget(QWidget):
         self.viewport=self._build_viewport(project)
         self.cursor_changed.emit("Cursor: —")
         self.measurement_changed.emit("Measurement: —")
+        self.update()
+
+    def set_cam(self,data):
+        self.cam=data
+        self.hidden_layers={key for key in self.hidden_layers if key[0]!='cam'}
+        self.viewport=Viewport(tuple(data['stock_bounds']))
         self.update()
 
     @staticmethod
@@ -196,6 +204,23 @@ class BoardWidget(QWidget):
                 pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 p.setPen(pen)
                 p.drawLine(point(slot.start),point(slot.end))
+        if self.cam:
+            colors={"isolation":"#56e0b2","drill":"#69b9ff","mill_slot":"#c69bff",
+                    "cutout_internal":"#f1b66e","cutout_external":"#f1b66e"}
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for i,stage in enumerate(self.cam["stages"]):
+                if ("cam",i) in self.hidden_layers:
+                    continue
+                p.setPen(QPen(QColor(colors[stage["operation"]]),1.6))
+                paths=QPainterPath()
+                for path in stage["paths"]:
+                    if len(path)==1:
+                        paths.addEllipse(point(path[0]),4,4)
+                    else:
+                        paths.moveTo(point(path[0]))
+                        for xy in path[1:]:
+                            paths.lineTo(point(xy))
+                p.drawPath(paths)
         p.setPen(QPen(QColor("#80d8ff"),1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
         for xy in self.measure_points:
@@ -207,7 +232,7 @@ class BoardWidget(QWidget):
             p.drawText((point(a)+point(b))/2+QPointF(5,-8),f"{d:.3f} mm")
         p.restore()
         p.setPen(QColor("#a8bacc"))
-        p.drawText(QPointF(20,25),"XY / Imported geometry — canonical coordinates")
+        p.drawText(QPointF(20,25),"XY / CAM centerlines — unmirrored" if self.cam else "XY / Imported geometry — canonical coordinates")
         grid=f" | Grid {self.viewport.grid_step(self.plot_rect()):g} mm" if self.show_grid else ""
         p.drawText(QPointF(20,self.height()-14),
-                   f"Input extent: {xmax-xmin:.3f} x {ymax-ymin:.3f} mm{grid} | Zoom {self.viewport.zoom:.2f}x")
+                   f"View extent: {xmax-xmin:.3f} x {ymax-ymin:.3f} mm{grid} | Zoom {self.viewport.zoom:.2f}x")

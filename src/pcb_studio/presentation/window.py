@@ -1,15 +1,17 @@
 """Offline desktop workstation. No physical machine actions."""
 from pathlib import Path
+import json
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QComboBox, QCheckBox, QTreeWidget, QTreeWidgetItem, QSplitter, QFrame, QStackedWidget, QDialog,
+    QComboBox, QCheckBox, QTreeWidget, QTreeWidgetItem, QSplitter, QFrame, QStackedWidget, QDialog, QFileDialog,
 )
 from pcb_studio.application.machine_service import MachineService
 from pcb_studio.presentation.toolpath_widget import ToolpathWidget
 from pcb_studio.presentation.board_widget import BoardWidget
 from pcb_studio.presentation.import_dialog import ImportDialog
+from pcb_studio.presentation.cam_dialog import CamDialog
 
 
 def _demo_loader():
@@ -24,6 +26,7 @@ class StudioWindow(QWidget):
         self.demo_loader=demo_loader or _demo_loader
         self.data=None
         self.project=None
+        self.cam_geometry=None
         self.setWindowTitle("Pictronics PCB Studio — Offline workstation")
         self.resize(1120,760)
         self.setStyleSheet("""
@@ -46,6 +49,12 @@ class StudioWindow(QWidget):
         self.import_button=QPushButton("Import PCB files")
         self.import_button.clicked.connect(self.open_import)
         bar.addWidget(self.import_button)
+        self.plan_cam=QPushButton("Plan CAM preview")
+        self.plan_cam.clicked.connect(self.open_cam)
+        bar.addWidget(self.plan_cam)
+        self.save_cam=QPushButton("Export CAM JSON")
+        self.save_cam.clicked.connect(self.export_cam)
+        bar.addWidget(self.save_cam)
         bar.addStretch()
         bar.addWidget(QLabel("OFFLINE ONLY  |  Hardware disabled"))
         layout.addLayout(bar)
@@ -138,6 +147,7 @@ class StudioWindow(QWidget):
 
     def set_preview(self,data):
         self.project=None
+        self.cam_geometry=None
         self.inspect_bar.hide()
         self.views.setCurrentWidget(self.canvas)
         self.data=data
@@ -184,6 +194,7 @@ class StudioWindow(QWidget):
     def set_project(self,project):
         self.data=None
         self.project=project
+        self.cam_geometry=None
         self.measure.setChecked(False)
         self.board.set_project(project)
         self.inspect_bar.show()
@@ -212,6 +223,73 @@ class StudioWindow(QWidget):
         self.message.setText("Import complete | No toolpaths generated | Not manufacturing-ready")
         self.refresh()
 
+    def open_cam(self):
+        if self.project is None:
+            return
+        dialog=CamDialog(self.project,self)
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            try:
+                settings=dialog.selection()
+            except ValueError as exc:
+                self.message.setText(f"CAM settings failed: {exc}")
+                return
+            self.generate_cam(**settings)
+
+    def generate_cam(self,**settings):
+        try:
+            from pcb_studio.infrastructure.cam.geometry_job import geometry_job
+            result=geometry_job(self.project,**settings)
+        except Exception as exc:
+            self.message.setText(f"CAM preview failed: {exc}")
+            return False
+        self.cam_geometry=result
+        self.board.set_cam(result)
+        root=self.tree.topLevelItem(0)
+        self.tree.blockSignals(True)
+        for i in reversed(range(root.childCount())):
+            key=root.child(i).data(0,Qt.ItemDataRole.UserRole)
+            if key and key[0]=="cam":
+                root.takeChild(i)
+        for i,s in enumerate(result["stages"]):
+            item=QTreeWidgetItem(root,[f'{s["operation"]} / {s["diameter_mm"]:g} mm / {s["feature_count"]}'])
+            item.setData(0,Qt.ItemDataRole.UserRole,("cam",i))
+            item.setCheckState(0,Qt.CheckState.Checked)
+        # Hide the opposite copper layer, not its underlying data.
+        for i,layer in enumerate(self.project.copper):
+            key=("copper",i)
+            if layer.side!=result["side"]:
+                self.board.hidden_layers.add(key)
+            else:
+                self.board.hidden_layers.discard(key)
+            root.child(i).setCheckState(0,Qt.CheckState.Unchecked if key in self.board.hidden_layers else Qt.CheckState.Checked)
+        root.setExpanded(True)
+        self.tree.blockSignals(False)
+        self.board.update()
+        self.detail.setText(f'CAM geometry / {result["side"]} / {len(result["stages"])} stages')
+        self.diagnostics.setText("Diagnostics:\n"+("\n".join(d["code"] for d in result["diagnostics"]) or "None reported"))
+        self.message.setText(f'CAM preview complete | residual {result["isolation_residual_mm2"]:.4f} mm2 | OFFLINE ONLY')
+        self.refresh()
+        return True
+
+    def write_cam_json(self,path):
+        if self.cam_geometry is None:
+            raise ValueError("No CAM preview")
+        if not str(path).lower().endswith(".cam.json"):
+            raise ValueError("Use .cam.json for offline geometry")
+        Path(path).write_text(json.dumps(self.cam_geometry,indent=2,allow_nan=False)+"\n",encoding="utf-8")
+
+    def export_cam(self):
+        if self.cam_geometry is None:
+            return
+        path,_=QFileDialog.getSaveFileName(self,"Export offline CAM geometry","preview.cam.json","CAM geometry (*.cam.json)")
+        if path:
+            try:
+                self.write_cam_json(path if path.lower().endswith(".cam.json") else path+".cam.json")
+            except (OSError,ValueError) as exc:
+                self.message.setText(f"Export failed: {exc}")
+                return
+            self.message.setText("CAM JSON exported | Not G-code or a machine program")
+
     def layer_changed(self,item,column):
         if self.project is None:
             return
@@ -225,6 +303,8 @@ class StudioWindow(QWidget):
             self.board.update()
 
     def refresh(self,*_):
+        self.plan_cam.setEnabled(self.project is not None and self.project.outline is not None)
+        self.save_cam.setEnabled(self.cam_geometry is not None)
         self.previous.setEnabled(self.data is not None and self.slider.value()>0)
         self.next.setEnabled(self.data is not None and self.slider.value()<self.slider.maximum())
         for control in (self.slider,self.stage,self.rapid):
