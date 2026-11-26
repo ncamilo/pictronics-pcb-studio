@@ -2,6 +2,7 @@
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
+from pcb_studio.domain.work_frame import WorkFrame
 from pcb_studio.presentation.viewport import Viewport, grid_values, measure
 
 
@@ -12,6 +13,7 @@ class BoardWidget(QWidget):
         super().__init__()
         self.project = None
         self.cam = None
+        self.work_frame = WorkFrame()
         self.hidden_layers = set()
         self.viewport = None
         self.show_grid = True
@@ -32,6 +34,14 @@ class BoardWidget(QWidget):
         self.cursor_changed.emit("Cursor: —")
         self.measurement_changed.emit("Measurement: —")
         self.update()
+
+    def set_work_frame(self,frame):
+        self.work_frame=frame
+        self.update()
+
+    def cursor_label(self,pixel):
+        xy=self.world_at(pixel)
+        return "Work X %.3f  Y %.3f mm" % self.work_frame.to_work(xy)
 
     def set_cam(self,data):
         self.cam=data
@@ -99,7 +109,7 @@ class BoardWidget(QWidget):
             pixel=event.position()
             factor=1.2**max(-10,min(10,event.angleDelta().y()/120))
             self.viewport.zoom_at((pixel.x(),pixel.y()),factor,self.plot_rect())
-            self.cursor_changed.emit("Cursor: X %.3f  Y %.3f mm" % self.world_at(pixel))
+            self.cursor_changed.emit(self.cursor_label(pixel))
             self.update()
             event.accept()
         else:
@@ -124,7 +134,7 @@ class BoardWidget(QWidget):
             self.viewport.translate(delta.x(),delta.y())
             self._drag=event.position()
             self.update()
-        self.cursor_changed.emit("Cursor: X %.3f  Y %.3f mm" % self.world_at(event.position()))
+        self.cursor_changed.emit(self.cursor_label(event.position()))
 
     def mouseReleaseEvent(self,event):
         if event.button()==Qt.MouseButton.MiddleButton:
@@ -221,6 +231,16 @@ class BoardWidget(QWidget):
                         for xy in path[1:]:
                             paths.lineTo(point(xy))
                 p.drawPath(paths)
+        origin=point(self.work_frame.origin)
+        sx,sy=self.work_frame.signs
+        p.setPen(QPen(QColor("#56e0b2"),2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(origin,5,5)
+        p.drawLine(origin,origin+QPointF(30*sx,0))
+        p.drawLine(origin,origin+QPointF(0,-30*sy))
+        p.drawText(origin+QPointF(6,-8),"X0 Y0")
+        p.drawText(origin+QPointF(34*sx,-3),"X+")
+        p.drawText(origin+QPointF(4,-34*sy),"Y+")
         p.setPen(QPen(QColor("#80d8ff"),1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
         for xy in self.measure_points:
@@ -232,7 +252,7 @@ class BoardWidget(QWidget):
             p.drawText((point(a)+point(b))/2+QPointF(5,-8),f"{d:.3f} mm")
         p.restore()
         p.setPen(QColor("#a8bacc"))
-        p.drawText(QPointF(20,25),"XY / CAM centerlines — unmirrored" if self.cam else "XY / Imported geometry — canonical coordinates")
+        p.drawText(QPointF(20,25),"XY / CAM centerlines — source view, work axes shown" if self.cam else "XY / Imported geometry — source view, work axes shown")
         grid=f" | Grid {self.viewport.grid_step(self.plot_rect()):g} mm" if self.show_grid else ""
         p.drawText(QPointF(20,self.height()-14),
                    f"View extent: {xmax-xmin:.3f} x {ymax-ymin:.3f} mm{grid} | Zoom {self.viewport.zoom:.2f}x")

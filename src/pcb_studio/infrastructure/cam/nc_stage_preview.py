@@ -1,5 +1,6 @@
 """Standalone NC files for offline visualization, never approved for execution."""
-from dataclasses import asdict
+from dataclasses import asdict, replace
+from pcb_studio.domain.work_frame import WorkFrame
 import json
 from pathlib import Path
 import re
@@ -60,12 +61,13 @@ def verify_stage_nc(text, source):
     return {"movements":len(events),"collapsed_moves":collapsed}
 
 
-def build_stage_nc(job, setup, settings, *, start_xy):
+def build_stage_nc(job, setup, settings, *, start_xy, frame=WorkFrame()):
     """Use virtual cylindrical tools at planned effective diameters.
 
     No physical tool dimensions are inferred. Requested RPM is metadata only.
-    Each file is independent and uses canonical, unmirrored work coordinates.
+    Each file uses the same work frame. Reflection reverses cutting orientation.
     """
+    _require(isinstance(frame,WorkFrame),"Invalid work frame")
     settings=tuple(settings)
     _require(len(settings)==len(job.stages),"One process setting per stage")
     tools=tuple(CuttingTool(f"virtual-{i}","Virtual preview tool",
@@ -76,28 +78,33 @@ def build_stage_nc(job, setup, settings, *, start_xy):
     trace=plan_motion_preview(bound,setup,start_xy=start_xy)
     commented=render_gcode_preview(trace)
     report=compare_gcode_preview(trace,commented)
-    # Split by stage markers, preserving the original validated serialization.
-    groups=[]
-    for line in commented.splitlines()[5:-1]:
-        word=line.removeprefix(";@preview ")
-        if word.startswith("STAGE "):
-            groups.append([])
-        else:
-            groups[-1].append(word)
+    # Validate canonical trace, then transform full-precision events.
     sources=[[] for _ in job.stages]
     for event in trace.events:
         if event.kind!="tool_setup":
-            sources[event.stage_index].append(event)
-    _require(len(groups)==len(job.stages),"NC stage count mismatch")
+            sources[event.stage_index].append(replace(event,start=frame.xyz(event.start),
+                                                       end=frame.xyz(event.end)))
     stem=re.sub(r"[^A-Za-z0-9_-]+","_",job.project_name).strip("_")[:60] or "PCB"
     files={}
     manifest=[]
-    for i,(s,lines,events,p) in enumerate(zip(job.stages,groups,sources,settings)):
+    for i,(s,events,p) in enumerate(zip(job.stages,sources,settings)):
         # Initial rapid from the previous stage is replaced by explicit entry.
         if events and events[0].kind=="rapid_xy":
-            lines=lines[1:]
             events=events[1:]
         _require(bool(events) and events[0].kind=="plunge","Missing stage entry")
+        lines=[]
+        for e in events:
+            x,y,z=e.end
+            if e.kind=="rapid_xy":
+                lines.append(f"G0 X{_fmt(x)} Y{_fmt(y)}")
+            elif e.kind=="cut_xy":
+                lines.append(f"G1 X{_fmt(x)} Y{_fmt(y)} F{_fmt(e.feed_mm_min)}")
+            elif e.kind=="plunge":
+                lines.append(f"G1 Z{_fmt(z)} F{_fmt(e.feed_mm_min)}")
+            elif e.kind=="retract":
+                lines.append(f"G0 Z{_fmt(z)}")
+            else:
+                raise ValueError("Unexpected motion")
         x,y,z=events[0].start
         nc="\n".join([HEADER,"G21","G90","G94",f"G0 Z{_fmt(z)}",
                       f"G0 X{_fmt(x)} Y{_fmt(y)}",*lines,FOOTER])+"\n"
@@ -105,16 +112,21 @@ def build_stage_nc(job, setup, settings, *, start_xy):
         name=f"{stem}_{job.copper_side}_{i+1:02d}_{s.operation}_{s.diameter_mm:g}mm.preview.nc"
         files[name]=nc
         manifest.append({"file":name,"operation":s.operation,"diameter_mm":s.diameter_mm,
-                         "settings":asdict(p),**check})
+                         "settings":asdict(p),
+                         "bounds_xy":[min(q[0] for e in events for q in (e.start,e.end)),
+                                      min(q[1] for e in events for q in (e.start,e.end)),
+                                      max(q[0] for e in events for q in (e.start,e.end)),
+                                      max(q[1] for e in events for q in (e.start,e.end))],**check})
     files["README.txt"]=(
         "OFFLINE VISUALIZATION ONLY. DO NOT RUN THESE FILES ON A CNC.\n"
         "Active G0/G1 moves are for offline viewers such as bCNC. No spindle or tool change.\n"
-        "Virtual tools, original canonical XY, no mirroring, no work offset, no collision check.\n"
+        "Virtual tools, explicit work XY transform in manifest, no controller offset, no collision check.\n"
         "Do not combine top and bottom jobs or use the values as machining recommendations.\n"
     )
     files["manifest.json"]=json.dumps({
         "manufacturing_ready":False,"format":"offline-stage-nc-preview",
-        "side":job.copper_side,"coordinate_system":"canonical board XY, unmirrored",
+        "side":job.copper_side,"coordinate_system":"work XY from canonical board XY",
+        "work_frame":asdict(frame),"cut_direction_reversed":frame.mirror!="none",
         "virtual_tools":True,"spindle_commands":False,"setup":asdict(setup),
         "source_roundtrip_collapsed_moves":report.collapsed_moves,
         "diagnostics":[asdict(d) for d in job.diagnostics],"stages":manifest,
@@ -122,9 +134,9 @@ def build_stage_nc(job, setup, settings, *, start_xy):
     return files
 
 
-def export_stage_nc(directory, job, setup, settings, *, start_xy):
+def export_stage_nc(directory, job, setup, settings, *, start_xy, frame=WorkFrame()):
     # Validate and construct every file before writing anything.
-    files=build_stage_nc(job,setup,settings,start_xy=start_xy)
+    files=build_stage_nc(job,setup,settings,start_xy=start_xy,frame=frame)
     folder=Path(tempfile.mkdtemp(prefix="pcb-nc-preview-",dir=directory))
     try:
         for name,content in files.items():

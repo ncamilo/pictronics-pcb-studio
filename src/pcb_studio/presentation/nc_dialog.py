@@ -6,16 +6,18 @@ from pcb_studio.domain.tools import ProcessSettings
 
 
 class NcDialog(QDialog):
-    def __init__(self,job,parent=None):
+    def __init__(self,job,parent=None,*,frame=None):
         super().__init__(parent)
         self.setWindowTitle("Export NC preview — DO NOT RUN")
         self.resize(930,410)
         layout=QVBoxLayout(self)
         warning=QLabel("Offline visualization only. Active motion words; never run on a CNC. "
-                       "Virtual cylindrical tools, original unmirrored XY, no spindle commands. "
+                       "Virtual cylindrical tools, configured work XY, no spindle commands. "
                        "Defaults are illustrative, not cutting recommendations.")
         warning.setWordWrap(True)
         layout.addWidget(warning)
+        if frame is not None:
+            layout.addWidget(QLabel(f'Work zero in source XY: {frame.origin} | Mirror: {frame.mirror} | All stages'))
         form=QFormLayout()
         def number(value,lo=0.001,hi=1000):
             box=QDoubleSpinBox()

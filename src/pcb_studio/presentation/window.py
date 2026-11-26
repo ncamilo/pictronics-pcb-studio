@@ -13,6 +13,8 @@ from pcb_studio.presentation.board_widget import BoardWidget
 from pcb_studio.presentation.import_dialog import ImportDialog
 from pcb_studio.presentation.cam_dialog import CamDialog
 from pcb_studio.presentation.nc_dialog import NcDialog
+from pcb_studio.domain.work_frame import WorkFrame,corner_frame
+from pcb_studio.presentation.work_frame_dialog import WorkFrameDialog
 
 
 def _demo_loader():
@@ -29,6 +31,7 @@ class StudioWindow(QWidget):
         self.project=None
         self.cam_geometry=None
         self.cam_job=None
+        self.work_frame=WorkFrame()
         self.setWindowTitle("Pictronics PCB Studio — Offline workstation")
         self.resize(1120,760)
         self.setStyleSheet("""
@@ -105,6 +108,11 @@ class StudioWindow(QWidget):
         inspect.setContentsMargins(0,0,0,0)
         self.fit=QPushButton("Fit to View")
         self.fit.clicked.connect(self.board.fit_view)
+        self.work_setup=QPushButton("Work XY setup")
+        self.work_setup.clicked.connect(self.open_work_frame)
+        self.work_label=QLabel("Work XY: original")
+        self.work_label.setWordWrap(True)
+        right.insertWidget(3,self.work_label)
         self.grid=QCheckBox("Grid")
         self.grid.setChecked(True)
         self.grid.toggled.connect(self.board.set_grid)
@@ -114,7 +122,7 @@ class StudioWindow(QWidget):
         self.measurement=QLabel("Measurement: —")
         self.board.cursor_changed.connect(self.cursor.setText)
         self.board.measurement_changed.connect(self.measurement.setText)
-        for widget in (self.fit,self.grid,self.measure,self.cursor,self.measurement):
+        for widget in (self.fit,self.work_setup,self.grid,self.measure,self.cursor,self.measurement):
             inspect.addWidget(widget)
         inspect.addStretch()
         layout.addWidget(self.inspect_bar)
@@ -154,6 +162,8 @@ class StudioWindow(QWidget):
         self.project=None
         self.cam_geometry=None
         self.cam_job=None
+        self.work_frame=WorkFrame()
+        self.work_label.setText("Work XY: demo coordinates")
         self.inspect_bar.hide()
         self.views.setCurrentWidget(self.canvas)
         self.data=data
@@ -204,6 +214,7 @@ class StudioWindow(QWidget):
         self.cam_job=None
         self.measure.setChecked(False)
         self.board.set_project(project)
+        self.set_work_frame(corner_frame(self.outline_bounds()) if project.outline else WorkFrame())
         self.inspect_bar.show()
         self.views.setCurrentWidget(self.board)
         self.tree.blockSignals(True)
@@ -230,6 +241,25 @@ class StudioWindow(QWidget):
         self.message.setText("Import complete | No toolpaths generated | Not manufacturing-ready")
         self.refresh()
 
+    def outline_bounds(self):
+        xs,ys=zip(*self.project.outline.exterior)
+        return min(xs),min(ys),max(xs),max(ys)
+
+    def set_work_frame(self,frame):
+        self.work_frame=frame
+        self.board.set_work_frame(frame)
+        x,y=frame.origin
+        self.work_label.setText(f"Work zero: source ({x:.3f}, {y:.3f}) mm | Mirror: {frame.mirror}")
+
+    def open_work_frame(self):
+        if self.project is None or self.project.outline is None:
+            return
+        stock=tuple(self.cam_geometry["stock_bounds"]) if self.cam_geometry else None
+        dialog=WorkFrameDialog(self.outline_bounds(),stock,self.work_frame,self)
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            self.set_work_frame(dialog.selection())
+            self.message.setText("Work XY updated | Source view unchanged | Applies to all exported stages")
+
     def open_cam(self):
         if self.project is None:
             return
@@ -249,6 +279,9 @@ class StudioWindow(QWidget):
         except Exception as exc:
             self.message.setText(f"CAM preview failed: {exc}")
             return False
+        if self.cam_geometry and self.cam_geometry['side']!=result['side']:
+            # Explicitly select reflection again for the new side.
+            self.set_work_frame(WorkFrame(self.work_frame.origin))
         self.cam_geometry=result
         self.cam_job=job
         self.board.set_cam(result)
@@ -301,7 +334,7 @@ class StudioWindow(QWidget):
     def open_nc(self):
         if self.cam_job is None:
             return
-        dialog=NcDialog(self.cam_job,self)
+        dialog=NcDialog(self.cam_job,self,frame=self.work_frame)
         if dialog.exec()!=QDialog.DialogCode.Accepted:
             return
         try:
@@ -319,7 +352,7 @@ class StudioWindow(QWidget):
             if self.cam_job is None:
                 raise ValueError("No CAM geometry planned")
             folder=export_stage_nc(directory,self.cam_job,setup,settings,
-                                  start_xy=tuple(self.cam_geometry["stock_bounds"][:2]))
+                                  start_xy=tuple(self.cam_geometry["stock_bounds"][:2]),frame=self.work_frame)
         except Exception as exc:
             self.message.setText(f"NC preview failed: {exc}")
             return None
@@ -339,6 +372,7 @@ class StudioWindow(QWidget):
             self.board.update()
 
     def refresh(self,*_):
+        self.work_setup.setEnabled(self.project is not None and self.project.outline is not None)
         self.plan_cam.setEnabled(self.project is not None and self.project.outline is not None)
         self.save_cam.setEnabled(self.cam_geometry is not None)
         self.save_nc.setEnabled(self.cam_job is not None)
