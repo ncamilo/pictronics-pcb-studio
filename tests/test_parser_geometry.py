@@ -2,6 +2,8 @@
 import pytest
 
 gerbonara = pytest.importorskip("gerbonara")
+from gerbonara.utils import MM
+
 GerberFile = gerbonara.GerberFile
 ExcellonFile = gerbonara.ExcellonFile
 
@@ -13,7 +15,7 @@ def load_gerber(tmp_path, body):
 
 
 def bounds(obj):
-    lo, hi = obj.bounding_box(unit="mm")
+    lo, hi = obj.bounding_box(unit=MM)
     return (*lo, *hi)
 
 
@@ -59,7 +61,7 @@ def test_ordered_polarity(tmp_path):
 
 def test_routed_slot(tmp_path):
     path = tmp_path / "slot.drl"
-    path.write_text("M48\nMETRIC,TZ\nT01C0.800\n%\nG90\nT01\n"
+    path.write_text("M48\nMETRIC,TZ\nG90\nT01C0.800\n%\nT01\n"
                     "G00X10.000Y20.000\nM15\nG01X15.000Y20.000\nM16\nG05\nM30\n",
                     encoding="ascii")
     layer = ExcellonFile.open(path)
