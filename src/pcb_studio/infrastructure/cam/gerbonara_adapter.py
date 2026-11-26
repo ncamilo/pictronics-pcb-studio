@@ -100,6 +100,32 @@ def _primitive_geometry(p):
     raise PCBImportError(f"Unsupported graphic primitive: {kind}")
 
 
+def _flash_geometry(obj):
+    """Compose an aperture locally before applying its layer polarity."""
+    aperture = obj.aperture
+    kind = _name(aperture)
+    if kind == "ApertureMacroInstance":
+        # Only explicitly reviewed macro primitives. Do not infer correctness
+        # of thermal/moire or rotated rectangle primitives from their output.
+        if any(_name(p) not in {"Circle", "Outline"} for p in aperture.macro.primitives):
+            raise PCBImportError("Unsupported aperture macro primitive")
+    elif kind not in {"CircleAperture", "RectangleAperture", "ObroundAperture"}:
+        raise PCBImportError("Unsupported flash aperture")
+    # Ask the aperture for a DARK stamp, regardless of the object's polarity.
+    # Clear primitive exposure is local transparency, not a layer erase.
+    x, y = _point(obj, "x", "y")
+    primitives = list(aperture.flash(x, y, MM, True))
+    if not primitives:
+        raise PCBImportError("Empty aperture")
+    if len(primitives) > 10000:
+        raise PCBImportError("Aperture exceeds preview primitive limit")
+    geometry = compose_copper((_primitive_geometry(p), bool(p.polarity_dark))
+                              for p in primitives)
+    if geometry.is_empty:
+        raise PCBImportError("Empty composed aperture")
+    return geometry
+
+
 def _ring(coords):
     return tuple((float(x), float(y)) for x, y in coords)
 
@@ -114,7 +140,8 @@ class GerbonaraImporter:
             for obj in layer.objects:
                 kind = _name(obj)
                 if kind == "Flash":
-                    _solid_aperture(obj, {"CircleAperture", "RectangleAperture", "ObroundAperture"})
+                    operations.append((_flash_geometry(obj), bool(obj.polarity_dark)))
+                    continue
                 elif kind in ("Line", "Arc"):
                     _solid_aperture(obj, {"CircleAperture"})
                 elif kind != "Region":

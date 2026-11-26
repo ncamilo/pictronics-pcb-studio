@@ -79,10 +79,11 @@ def test_degenerate_region_reports_port_error(tmp_path):
         GerbonaraImporter().copper(p, "top")
 
 
-def test_hole_aperture_not_silently_filled(tmp_path):
+def test_hole_aperture_geometry(tmp_path):
     p = gerber(tmp_path, "%ADD10C,2X1*%\nD10*\nX0Y0D03*")
-    with pytest.raises(PCBImportError):
-        GerbonaraImporter().copper(p, "top")
+    layer = GerbonaraImporter().copper(p, "top")
+    assert area(layer) == pytest.approx(math.pi * 0.75, rel=2e-4)
+    assert len(layer.polygons[0].holes) == 1
 
 
 @pytest.mark.parametrize("closed", [True, False])
@@ -166,3 +167,56 @@ def test_reject_nested_or_overlapping_cutouts(tmp_path, other):
                + "\n" + rectangle_loop(2, 2, 7, 7) + "\n" + rectangle_loop(*other))
     with pytest.raises(PCBImportError):
         GerbonaraImporter().outline(p)
+
+
+def macro_ring_header():
+    return "%AMRING*1,1,$1,0,0,0*1,0,$2,0,0,0*%\n%ADD10RING,4X2*%"
+
+
+def test_parameterized_macro_ring(tmp_path):
+    p = gerber(tmp_path, macro_ring_header() + "\nD10*\nX5000000Y6000000D03*")
+    layer = GerbonaraImporter().copper(p, "top")
+    poly = Polygon(layer.polygons[0].exterior, layer.polygons[0].holes)
+    assert poly.area == pytest.approx(3 * math.pi, rel=2e-4)
+    assert poly.bounds == pytest.approx((3, 4, 7, 8))
+    assert len(poly.interiors) == 1
+
+
+@pytest.mark.parametrize("macro", [False, True])
+def test_transparent_dark_flash_preserves_existing_copper(tmp_path, macro):
+    header = macro_ring_header() if macro else "%ADD10C,4X2*%"
+    p = gerber(tmp_path, header + "\n%ADD11R,1X1*%\n%LPD*\nD11*\nX0Y0D03*\nD10*\nX0Y0D03*".replace("%LPD*", "%LPD*%"))
+    layer = GerbonaraImporter().copper(p, "top")
+    assert area(layer) == pytest.approx(3 * math.pi + 1, rel=2e-4)
+    assert len(layer.polygons) == 2
+
+
+@pytest.mark.parametrize("macro", [False, True])
+def test_clear_ring_preserves_center_copper(tmp_path, macro):
+    header = macro_ring_header() if macro else "%ADD10C,4X2*%"
+    p = gerber(tmp_path, header + "\n%ADD11R,10X10*%\n%LPD*%\nD11*\nX0Y0D03*\n%LPC*%\nD10*\nX0Y0D03*")
+    layer = GerbonaraImporter().copper(p, "top")
+    assert area(layer) == pytest.approx(100 - 3 * math.pi, rel=2e-4)
+    assert len(layer.polygons) == 2
+
+
+def test_disjoint_macro_circles(tmp_path):
+    p = gerber(tmp_path, "%AMPAIR*1,1,2,-3,0,0*1,1,2,3,0,0*%\n"
+               "%ADD10PAIR*%\nD10*\nX10000000Y20000000D03*")
+    layer = GerbonaraImporter().copper(p, "top")
+    assert len(layer.polygons) == 2
+    assert area(layer) == pytest.approx(2 * math.pi, rel=2e-4)
+
+
+def test_macro_outline(tmp_path):
+    p = gerber(tmp_path, "%AMTRI*4,1,3,0,0,4,0,0,3,0,0,0*%\n"
+               "%ADD10TRI*%\nD10*\nX10000000Y20000000D03*")
+    layer = GerbonaraImporter().copper(p, "top")
+    assert area(layer) == pytest.approx(6)
+    assert Polygon(layer.polygons[0].exterior).bounds == (10,20,14,23)
+
+
+def test_unsupported_thermal_macro(tmp_path):
+    p = gerber(tmp_path, "%AMTHERM*7,0,0,4,2,0.5,0*%\n%ADD10THERM*%\nD10*\nX0Y0D03*")
+    with pytest.raises(PCBImportError):
+        GerbonaraImporter().copper(p, "top")
