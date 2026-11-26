@@ -1,0 +1,2 @@
+# Segurança de operação
+Versão inicial exclusivamente simulada. Antes de habilitar hardware: confirmar firmware, limites, homing, sentido dos eixos, altura segura, origem, fixação, intertravamentos e parada de emergência física. Estado desconhecido, alarme ou perda de comunicação bloqueiam novas operações. Não retomar automaticamente após falhas. Parada via software não substitui emergência física. Validar sem ferramenta e sem spindle antes de corte; usar proteção e extração apropriadas.

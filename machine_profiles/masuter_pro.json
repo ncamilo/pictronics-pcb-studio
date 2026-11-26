@@ -1,0 +1,8 @@
+{
+  "name": "FoxAlien Masuter Pro",
+  "controller": "GRBL (pending verification)",
+  "hardware_enabled": false,
+  "travel_mm": null,
+  "serial_baud": null,
+  "safe_z_mm": null
+}
