@@ -7,7 +7,7 @@ from pcb_studio.infrastructure.cam.cutout_preview import Tab
 from pcb_studio.infrastructure.cam.job_preview import plan_job_preview
 
 
-def geometry_job(project, *, side, diameter, target, passes, overlap, cutter,
+def plan_geometry_job(project, *, side, diameter, target, passes, overlap, cutter,
                  stock_margin, tab_anchors=(), tab_width=2.0):
     """Choose one side without mirroring; model assumed rectangular stock."""
     layers=tuple(layer for layer in project.copper if layer.side==side)
@@ -38,7 +38,7 @@ def geometry_job(project, *, side, diameter, target, passes, overlap, cutter,
         stages.append({"operation":s.operation,"diameter_mm":s.diameter_mm,
                        "feature_count":s.feature_count,"cutting_xy_mm":s.cutting_xy_mm,
                        "paths":paths,"features":features})
-    return {"schema_version":1,"format":"offline-cam-geometry","units":"mm",
+    data = {"schema_version":1,"format":"offline-cam-geometry","units":"mm",
             "manufacturing_ready":False,"project":project.name,"side":side,
             "coordinate_system":"canonical board XY, unmirrored",
             "stock_bounds":[x0,y0,x1,y1],"stock_assumed":True,
@@ -48,3 +48,9 @@ def geometry_job(project, *, side, diameter, target, passes, overlap, cutter,
             "stages":stages,"tab_gaps":job.cutout.tab_gaps,
             "isolation_residual_mm2":job.isolation.residual_mm2,
             "diagnostics":[{"code":d.code,"detail":d.detail} for d in job.diagnostics]}
+
+    return data, job
+
+
+def geometry_job(project, **settings):
+    return plan_geometry_job(project, **settings)[0]

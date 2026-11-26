@@ -12,6 +12,7 @@ from pcb_studio.presentation.toolpath_widget import ToolpathWidget
 from pcb_studio.presentation.board_widget import BoardWidget
 from pcb_studio.presentation.import_dialog import ImportDialog
 from pcb_studio.presentation.cam_dialog import CamDialog
+from pcb_studio.presentation.nc_dialog import NcDialog
 
 
 def _demo_loader():
@@ -27,6 +28,7 @@ class StudioWindow(QWidget):
         self.data=None
         self.project=None
         self.cam_geometry=None
+        self.cam_job=None
         self.setWindowTitle("Pictronics PCB Studio — Offline workstation")
         self.resize(1120,760)
         self.setStyleSheet("""
@@ -55,6 +57,9 @@ class StudioWindow(QWidget):
         self.save_cam=QPushButton("Export CAM JSON")
         self.save_cam.clicked.connect(self.export_cam)
         bar.addWidget(self.save_cam)
+        self.save_nc=QPushButton("Export NC preview")
+        self.save_nc.clicked.connect(self.open_nc)
+        bar.addWidget(self.save_nc)
         bar.addStretch()
         bar.addWidget(QLabel("OFFLINE ONLY  |  Hardware disabled"))
         layout.addLayout(bar)
@@ -148,6 +153,7 @@ class StudioWindow(QWidget):
     def set_preview(self,data):
         self.project=None
         self.cam_geometry=None
+        self.cam_job=None
         self.inspect_bar.hide()
         self.views.setCurrentWidget(self.canvas)
         self.data=data
@@ -195,6 +201,7 @@ class StudioWindow(QWidget):
         self.data=None
         self.project=project
         self.cam_geometry=None
+        self.cam_job=None
         self.measure.setChecked(False)
         self.board.set_project(project)
         self.inspect_bar.show()
@@ -237,12 +244,13 @@ class StudioWindow(QWidget):
 
     def generate_cam(self,**settings):
         try:
-            from pcb_studio.infrastructure.cam.geometry_job import geometry_job
-            result=geometry_job(self.project,**settings)
+            from pcb_studio.infrastructure.cam.geometry_job import plan_geometry_job
+            result,job=plan_geometry_job(self.project,**settings)
         except Exception as exc:
             self.message.setText(f"CAM preview failed: {exc}")
             return False
         self.cam_geometry=result
+        self.cam_job=job
         self.board.set_cam(result)
         root=self.tree.topLevelItem(0)
         self.tree.blockSignals(True)
@@ -290,6 +298,34 @@ class StudioWindow(QWidget):
                 return
             self.message.setText("CAM JSON exported | Not G-code or a machine program")
 
+    def open_nc(self):
+        if self.cam_job is None:
+            return
+        dialog=NcDialog(self.cam_job,self)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:
+            return
+        try:
+            setup,settings=dialog.selection()
+        except ValueError as exc:
+            self.message.setText(f"NC settings failed: {exc}")
+            return
+        directory=QFileDialog.getExistingDirectory(self,"Export offline NC previews to folder")
+        if directory:
+            self.write_nc_previews(directory,setup,settings)
+
+    def write_nc_previews(self,directory,setup,settings):
+        try:
+            from pcb_studio.infrastructure.cam.nc_stage_preview import export_stage_nc
+            if self.cam_job is None:
+                raise ValueError("No CAM geometry planned")
+            folder=export_stage_nc(directory,self.cam_job,setup,settings,
+                                  start_xy=tuple(self.cam_geometry["stock_bounds"][:2]))
+        except Exception as exc:
+            self.message.setText(f"NC preview failed: {exc}")
+            return None
+        self.message.setText(f"Offline NC previews saved: {folder} | DO NOT RUN ON CNC")
+        return folder
+
     def layer_changed(self,item,column):
         if self.project is None:
             return
@@ -305,6 +341,7 @@ class StudioWindow(QWidget):
     def refresh(self,*_):
         self.plan_cam.setEnabled(self.project is not None and self.project.outline is not None)
         self.save_cam.setEnabled(self.cam_geometry is not None)
+        self.save_nc.setEnabled(self.cam_job is not None)
         self.previous.setEnabled(self.data is not None and self.slider.value()>0)
         self.next.setEnabled(self.data is not None and self.slider.value()<self.slider.maximum())
         for control in (self.slider,self.stage,self.rapid):
