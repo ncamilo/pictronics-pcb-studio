@@ -7,3 +7,11 @@ Git blob: a67f8054fb64880f17104d280aa6729f5d614d80
 License: MIT; original file header and root LICENSE retained.
 Changes: none to the imported source.
 Scope: experimental pure parsing; not wired into the machine service. No serial writes or motion. Future adapter must reject unknown states, stale offsets, inconsistent/invalid reports and non-finite derived values before using them for any motion decision.
+
+## PathOrder
+File: appCommon/PathOrder.py
+Commit: c948622f6b906f9910990d7bafbfb3012be21350
+Git blob: ca1983d4866fce47c743e2f93c7cc82a35b42421
+License: repository-level MIT (no separate header in this file); root LICENSE retained. No external source attribution found in inspected file; further provenance review before production release.
+Changes: none; filename adapted to Python naming convention.
+Imports: math, array, NumPy, Shapely. Research only; no machine integration. The original can silently omit unreadable paths and reverse paths, so the wrapper validates input and rejects fixed-direction operations.
