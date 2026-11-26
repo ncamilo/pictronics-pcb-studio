@@ -1,6 +1,6 @@
 # RES-015 — Drilling and straight-slot preview
 
-Status: initial drilling preview passed on Windows and Ubuntu; direct reference comparison submitted.
+Status: initial drilling preview passed on Windows and Ubuntu; direct reference comparison passed.
 
 Inspected FlatCAM Evo appPlugins/ToolDrilling/DrillingGen.py at c948622f6b906f9910990d7bafbfb3012be21350, blob bac0594b4a0864d9ce97f9feccfa69a8797594a6. Its merge functions group exact nominal diameters and detect conflicting tool data; slot-to-drill and transform functions are separate. Our original domain adapter groups by operation and exact nominal diameter without rounding, retains source layer/index/plating metadata, and reuses the already vendored FlatCAM PathOrder for drill ordering. No additional upstream source copied. Slot milling is distinct from drilling, even at equal diameter. No slot-to-drill conversion or implicit transform. Slots retain direction and input order within size. Duplicate geometry, including reversed slots and plating conflicts, is reported without deletion. Future manufacturing validation must resolve duplicates and overlapping features.
 
@@ -11,3 +11,6 @@ Commit 4726ee13f8783dce82c8ad60ba032534c3d8ab65: 123 research tests passed on ea
 
 ## Direct grouping comparison
 New synthetic fixture supplies four nominal tool records with equal/near-equal sizes, separate slots, duplicate hole and a synthetic plating-data conflict. Execute original merge_same_diameter_tools and diameter_conflicts in isolated pinned FlatCAM environment. Compare exact feature multiplicity and coordinates, independent expected group counts, Studio's source/plating preservation. FlatCAM merging by diameter may retain first tool's data; we separate drill and mill-slot operations. This is not a comparison of complete drilling jobs, feeds, Z or machining. Results pending.
+
+## Verified grouping comparison
+Commit e4886d4ed16317a12f6608749fb4f972d82d1065: FlatCAM reference workflow completed successfully, https://github.com/ncamilo/pictronics-pcb-studio/actions/runs/45886508856 . All seven feature records match exactly, including duplicate multiplicity and the straight slot; no coordinate or nominal diameter differences. Studio groups: drill 0.8 mm (4), drill 0.8001 mm (1), drill 1.2 mm (1), mill_slot 0.8 mm (1). FlatCAM detected the synthetic fixture_plated conflict for tool IDs 1 and 3 at 0.8 mm. Studio reported one duplicate pair and preserved per-feature source and plating metadata. This compares the specific upstream grouping functions, not all capabilities of FlatCAM or complete drilling toolpaths. No physical tool selection or machining validation. All CI and research workflows for e4886d4 passed. Remaining work includes overlapping feature checks, real KiCad files, physical tool assignment and board cutout preview.
