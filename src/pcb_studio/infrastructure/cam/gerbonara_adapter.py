@@ -36,6 +36,25 @@ def _load(file_type, path):
         raise PCBImportError(f"Cannot parse {Path(path).name}: {exc}") from exc
 
 
+def _empty_kicad_npth(path):
+    """Recognize only a complete, explicit, empty KiCad metric NPTH export.
+
+    Do not treat arbitrary parser errors, truncated files or missing tools as
+    empty drill layers. Nonempty exports still go through the usual parser.
+    """
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    lines = [line.strip() for line in lines if line.strip()]
+    commands = [line for line in lines if not line.startswith(";")]
+    return (
+        commands == ["M48", "FMAT,2", "METRIC", "%", "G90", "G05", "M30"]
+        and any(line.startswith("; #@! TF.FileFunction,NonPlated,")
+                and line.endswith(",NPTH") for line in lines)
+    )
+
+
 def _name(obj):
     return type(obj).__name__
 
@@ -172,6 +191,8 @@ class GerbonaraImporter:
             raise PCBImportError(str(exc)) from exc
 
     def drills(self, path):
+        if _empty_kicad_npth(path):
+            return DrillLayer(str(path))
         layer = _load(ExcellonFile, path)
         drills, slots = [], []
         for obj in layer.objects:

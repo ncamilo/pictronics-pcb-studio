@@ -276,3 +276,61 @@ def test_macro_nonorthogonal_rotation(tmp_path,primitive,local,angle):
     actual=Polygon(layer.polygons[0].exterior,layer.polygons[0].holes)
     expected=affinity.translate(affinity.rotate(box(*local),angle,origin=(0,0)),10,20)
     assert actual.symmetric_difference(expected).area<1e-8, (actual.wkt,expected.wkt)
+
+def test_kicad_parameterized_roundrect(tmp_path):
+    from shapely.geometry import box
+    # Generic pad, not a user's actual board; KiCad's optional circle rotation
+    # is omitted and the unused final aperture parameter is retained.
+    macro = ("%AMRoundRect*\n"
+             "4,1,4,$2,$3,$4,$5,$6,$7,$8,$9,$2,$3,0*\n"
+             "1,1,$1+$1,$2,$3*\n1,1,$1+$1,$4,$5*\n"
+             "1,1,$1+$1,$6,$7*\n1,1,$1+$1,$8,$9*\n"
+             "20,1,$1+$1,$2,$3,$4,$5,0*\n"
+             "20,1,$1+$1,$4,$5,$6,$7,0*\n"
+             "20,1,$1+$1,$6,$7,$8,$9,0*\n"
+             "20,1,$1+$1,$8,$9,$2,$3,0*%\n")
+    p = gerber(tmp_path, macro + "%ADD10RoundRect,0.3X1.2X0.7X-1.2X0.7X-1.2X-0.7X1.2X-0.7X0*%\n"
+               "D10*\nX8000000Y-5000000D03*")
+    layer = GerbonaraImporter().copper(p, "bottom")
+    assert len(layer.polygons) == 1
+    actual = Polygon(layer.polygons[0].exterior, layer.polygons[0].holes)
+    expected = box(6.8,-5.7,9.2,-4.3).buffer(0.3,quad_segs=64)
+    assert actual.symmetric_difference(expected).area < 1e-8
+
+
+EMPTY_NPTH = ("M48\n; DRILL file KiCad\n"
+              "; #@! TF.FileFunction,NonPlated,1,2,NPTH\n"
+              "FMAT,2\nMETRIC\n%\nG90\nG05\nM30\n")
+
+
+def test_empty_kicad_npth(tmp_path):
+    p=tmp_path/"empty.drl"
+    p.write_text(EMPTY_NPTH,encoding="ascii")
+    layer=GerbonaraImporter().drills(p)
+    assert layer.source==str(p)
+    assert layer.drills==() and layer.slots==()
+
+
+@pytest.mark.parametrize("text", [
+    "",
+    EMPTY_NPTH.replace("M30\n",""),
+    EMPTY_NPTH.replace("NonPlated,1,2,NPTH","Plated,1,2,PTH"),
+    EMPTY_NPTH.replace("M30","X3.0Y4.0\nM30"),
+])
+def test_empty_npth_recognition_is_narrow(tmp_path,text):
+    from pcb_studio.infrastructure.cam.gerbonara_adapter import _empty_kicad_npth
+    p=tmp_path/"invalid.drl"
+    p.write_text(text,encoding="ascii")
+    assert not _empty_kicad_npth(p)
+
+
+def test_kicad_two_tools_same_diameter_negative_y(tmp_path):
+    p=tmp_path/"plated.drl"
+    p.write_text("M48\n; #@! TF.FileFunction,Plated,1,2,PTH\nFMAT,2\nMETRIC\n"
+                 "; #@! TA.AperFunction,Plated,PTH,ViaDrill\nT1C0.800\n"
+                 "; #@! TA.AperFunction,Plated,PTH,ComponentDrill\nT2C0.800\n"
+                 "%\nG90\nG05\nT1\nX4.1Y-3.5\nT2\nX8.2Y-6.7\nM30\n",encoding="ascii")
+    layer=GerbonaraImporter().drills(p)
+    assert len(layer.drills)==2
+    assert [d.center for d in layer.drills]==[(4.1,-3.5),(8.2,-6.7)]
+    assert [d.diameter_mm for d in layer.drills]==[0.8,0.8]
