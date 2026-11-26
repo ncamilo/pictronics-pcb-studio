@@ -91,3 +91,15 @@ jobs:
       - name: Compare drilling groups
         run: |
           "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_drilling_reference.py research/flatcam/drilling_cases.json "$RUNNER_TEMP/drilling-reference.json"
+      - name: Export original FlatCAM cutout paths
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCB_CUTOUT_CASES: ${{ github.workspace }}/research/flatcam/cutout_cases.json
+          PCB_CUTOUT_RESULT: ${{ runner.temp }}/cutout-reference.json
+        run: |
+          cp research/flatcam/export_cutout_reference.py upstream-flatcam/tests/test_pcb_studio_cutout_reference.py
+          cd upstream-flatcam
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_cutout_reference.py -v -s
+      - name: Compare cutout paths and tabs
+        run: |
+          "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_cutout_reference.py research/flatcam/cutout_cases.json "$RUNNER_TEMP/cutout-reference.json"
