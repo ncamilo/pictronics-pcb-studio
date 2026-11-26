@@ -1,7 +1,13 @@
 # RES-015 — Drilling and straight-slot preview
 
-Status: submitted for CI.
+Status: initial drilling preview passed on Windows and Ubuntu; direct reference comparison submitted.
 
 Inspected FlatCAM Evo appPlugins/ToolDrilling/DrillingGen.py at c948622f6b906f9910990d7bafbfb3012be21350, blob bac0594b4a0864d9ce97f9feccfa69a8797594a6. Its merge functions group exact nominal diameters and detect conflicting tool data; slot-to-drill and transform functions are separate. Our original domain adapter groups by operation and exact nominal diameter without rounding, retains source layer/index/plating metadata, and reuses the already vendored FlatCAM PathOrder for drill ordering. No additional upstream source copied. Slot milling is distinct from drilling, even at equal diameter. No slot-to-drill conversion or implicit transform. Slots retain direction and input order within size. Duplicate geometry, including reversed slots and plating conflicts, is reported without deletion. Future manufacturing validation must resolve duplicates and overlapping features.
 
 Board clearance checks the entire centerline plus nominal radius and provisional extra 0.002 mm against all polygonal board boundaries, including cutouts. No fixtures or physical tool calibration. Stages use common supplied start solely for within-stage open-route XY comparison; do not sum as actual machine time. Optimization never increases baseline distance. No actual tool assignment, Z, depth, tool changes, G-code, CNC or GUI integration. Manufacturing readiness false. Tests cover grouping, precision, duplicate provenance, slot direction, optimization, edge and cutout violations, and synthetic board import. Actual CI results pending. Next: cross-check FlatCAM grouping and independent reference records, then board cutout and tabs.
+
+## Verified evidence
+Commit 4726ee13f8783dce82c8ad60ba032534c3d8ab65: 123 research tests passed on each OS (15 new), https://github.com/ncamilo/pictronics-pcb-studio/actions/runs/45886220966. Grid of 54 shuffled holes: 597.294831772 mm input-order open XY travel versus 163.071067812 mm optimized, identical on both OS. Not actual machining time. Previous multi-tool commit's reference workflow completed successfully: https://github.com/ncamilo/pictronics-pcb-studio/actions/runs/45885744108.
+
+## Direct grouping comparison
+New synthetic fixture supplies four nominal tool records with equal/near-equal sizes, separate slots, duplicate hole and a synthetic plating-data conflict. Execute original merge_same_diameter_tools and diameter_conflicts in isolated pinned FlatCAM environment. Compare exact feature multiplicity and coordinates, independent expected group counts, Studio's source/plating preservation. FlatCAM merging by diameter may retain first tool's data; we separate drill and mill-slot operations. This is not a comparison of complete drilling jobs, feeds, Z or machining. Results pending.

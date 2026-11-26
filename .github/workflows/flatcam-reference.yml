@@ -79,3 +79,15 @@ jobs:
       - name: Compare isolation geometry
         run: |
           "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_isolation_reference.py research/flatcam/isolation_cases.json "$RUNNER_TEMP/isolation-reference.json"
+      - name: Export original FlatCAM drilling groups
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCB_DRILL_CASES: ${{ github.workspace }}/research/flatcam/drilling_cases.json
+          PCB_DRILL_RESULT: ${{ runner.temp }}/drilling-reference.json
+        run: |
+          cp research/flatcam/export_drilling_reference.py upstream-flatcam/tests/test_pcb_studio_drilling_reference.py
+          cd upstream-flatcam
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_drilling_reference.py -v -s
+      - name: Compare drilling groups
+        run: |
+          "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_drilling_reference.py research/flatcam/drilling_cases.json "$RUNNER_TEMP/drilling-reference.json"
