@@ -67,3 +67,15 @@ jobs:
             "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_reference.py "$fixture" "$RUNNER_TEMP/reference-$name.json" || status=1
           done
           exit "$status"
+      - name: Export original FlatCAM isolation contours
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCB_ISOLATION_CASES: ${{ github.workspace }}/research/flatcam/isolation_cases.json
+          PCB_ISOLATION_RESULT: ${{ runner.temp }}/isolation-reference.json
+        run: |
+          cp research/flatcam/export_isolation_reference.py upstream-flatcam/tests/test_pcb_studio_isolation_reference.py
+          cd upstream-flatcam
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_isolation_reference.py -v -s
+      - name: Compare isolation geometry
+        run: |
+          "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_isolation_reference.py research/flatcam/isolation_cases.json "$RUNNER_TEMP/isolation-reference.json"
