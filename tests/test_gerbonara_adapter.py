@@ -50,8 +50,31 @@ def test_region_and_polarity(tmp_path):
     assert len(layer.polygons[0].holes) == 1
 
 
-def test_unsupported_arc_fails_closed(tmp_path):
-    p = gerber(tmp_path, "%ADD10C,0.4*%\nD10*\nG75*\nX10000000Y0D02*\nG03X0Y10000000I-10000000J0D01*")
+@pytest.mark.parametrize("command,expected_bounds,sweep", [
+    ("G03", (-0.2, -0.2, 10.2, 10.2), math.pi / 2),
+    ("G02", (-10.2, -10.2, 10.2, 10.2), 3 * math.pi / 2),
+])
+def test_arc_stroke(tmp_path, command, expected_bounds, sweep):
+    p = gerber(tmp_path, "%ADD10C,0.4*%\nD10*\nG75*\nX10000000Y0D02*\n"
+               f"{command}X0Y10000000I-10000000J0D01*")
+    layer = GerbonaraImporter().copper(p, "top")
+    poly = Polygon(layer.polygons[0].exterior, layer.polygons[0].holes)
+    assert poly.bounds == pytest.approx(expected_bounds, abs=0.003)
+    assert poly.area == pytest.approx(10 * sweep * 0.4 + math.pi * 0.2**2, rel=0.002)
+
+
+def test_full_circle_stroke(tmp_path):
+    p = gerber(tmp_path, "%ADD10C,0.4*%\nD10*\nG75*\nX10000000Y0D02*\n"
+               "G03X10000000Y0I-10000000J0D01*")
+    layer = GerbonaraImporter().copper(p, "top")
+    assert len(layer.polygons) == 1
+    assert len(layer.polygons[0].holes) == 1
+    assert area(layer) == pytest.approx(2 * math.pi * 10 * 0.4, rel=0.002)
+
+
+def test_degenerate_region_reports_port_error(tmp_path):
+    p = gerber(tmp_path, "%ADD10C,0.1*%\nD10*\nG01*\nG36*\n"
+               "X0Y0D02*\nX10000000Y0D01*\nG37*")
     with pytest.raises(PCBImportError):
         GerbonaraImporter().copper(p, "top")
 
