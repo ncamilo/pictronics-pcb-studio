@@ -1,28 +1,38 @@
 """Read-only native Qt layer rendering in canonical XY."""
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
+from pcb_studio.presentation.viewport import Viewport, grid_values, measure
 
 
 class BoardWidget(QWidget):
+    cursor_changed = Signal(str)
+    measurement_changed = Signal(str)
     def __init__(self):
         super().__init__()
         self.project = None
         self.hidden_layers = set()
+        self.viewport = None
+        self.show_grid = True
+        self.measuring = False
+        self.measure_points = []
+        self._drag = None
+        self.setMouseTracking(True)
         self.setMinimumSize(430, 380)
 
     def set_project(self, project):
         self.project = project
         self.hidden_layers.clear()
+        self.measure_points.clear()
+        self.measuring=False
+        self._drag=None
+        self.viewport=self._build_viewport(project)
+        self.cursor_changed.emit("Cursor: —")
+        self.measurement_changed.emit("Measurement: —")
         self.update()
 
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor("#182638"))
-        project = self.project
-        if project is None:
-            return
+    @staticmethod
+    def _build_viewport(project):
         points = [xy for layer in project.copper for poly in layer.polygons for xy in poly.exterior]
         if project.outline:
             points.extend(project.outline.exterior)
@@ -36,12 +46,120 @@ class BoardWidget(QWidget):
             return
         xs, ys = zip(*points)
         xmin,xmax,ymin,ymax = min(xs),max(xs),min(ys),max(ys)
-        rect = QRectF(self.rect()).adjusted(28,48,-28,-38)
-        scale = min(rect.width()/max(xmax-xmin,1e-9),rect.height()/max(ymax-ymin,1e-9))
+        return Viewport((xmin,ymin,xmax,ymax))
 
-        def point(xy):
-            return QPointF(rect.center().x()+(xy[0]-(xmin+xmax)/2)*scale,
-                           rect.center().y()-(xy[1]-(ymin+ymax)/2)*scale)
+    def plot_rect(self):
+        r=QRectF(self.rect()).adjusted(28,48,-28,-38)
+        return (r.x(),r.y(),r.width(),r.height())
+
+    def world_at(self,pixel):
+        return self.viewport.world((pixel.x(),pixel.y()),self.plot_rect())
+
+    def screen_at(self,xy):
+        return QPointF(*self.viewport.screen(xy,self.plot_rect()))
+
+    def fit_view(self):
+        if self.viewport:
+            self.viewport.fit()
+            self.update()
+
+    def set_grid(self,checked):
+        self.show_grid=checked
+        self.update()
+
+    def set_measure(self,checked):
+        self.measuring=checked
+        self.measure_points.clear()
+        self.measurement_changed.emit("Select two XY points" if checked else "Measurement: —")
+        self.update()
+
+    def measure_at(self,xy):
+        if not self.measuring:
+            return
+        if len(self.measure_points)==2:
+            self.measure_points.clear()
+        self.measure_points.append(xy)
+        if len(self.measure_points)==2:
+            dx,dy,d=measure(*self.measure_points)
+            self.measurement_changed.emit(f"Distance {d:.3f} mm | dX {dx:.3f} | dY {dy:.3f}")
+        else:
+            self.measurement_changed.emit("Select second point")
+        self.update()
+
+    def wheelEvent(self,event):
+        if self.viewport and event.angleDelta().y():
+            pixel=event.position()
+            factor=1.2**max(-10,min(10,event.angleDelta().y()/120))
+            self.viewport.zoom_at((pixel.x(),pixel.y()),factor,self.plot_rect())
+            self.cursor_changed.emit("Cursor: X %.3f  Y %.3f mm" % self.world_at(pixel))
+            self.update()
+            event.accept()
+        else:
+            event.ignore()
+
+    def mousePressEvent(self,event):
+        if self.viewport and event.button()==Qt.MouseButton.MiddleButton:
+            self._drag=event.position()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+        elif self.viewport and self.measuring and event.button()==Qt.MouseButton.LeftButton:
+            self.measure_at(self.world_at(event.position()))
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self,event):
+        if not self.viewport:
+            return
+        if self._drag is not None:
+            delta=event.position()-self._drag
+            self.viewport.translate(delta.x(),delta.y())
+            self._drag=event.position()
+            self.update()
+        self.cursor_changed.emit("Cursor: X %.3f  Y %.3f mm" % self.world_at(event.position()))
+
+    def mouseReleaseEvent(self,event):
+        if event.button()==Qt.MouseButton.MiddleButton:
+            self._drag=None
+            self.unsetCursor()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def leaveEvent(self,event):
+        self.cursor_changed.emit("Cursor: —")
+        super().leaveEvent(event)
+
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor("#182638"))
+        project = self.project
+        if project is None:
+            return
+        if not self.viewport:
+            return
+        xmin,ymin,xmax,ymax=self.viewport.bounds
+        scale=self.viewport.scale(self.plot_rect())
+        point=self.screen_at
+        p.save()
+        plot=QRectF(*self.plot_rect())
+        p.setClipRect(plot)
+        if self.show_grid:
+            step=self.viewport.grid_step(self.plot_rect())
+            lo=self.world_at(plot.bottomLeft())
+            hi=self.world_at(plot.topRight())
+            p.setPen(QPen(QColor("#34475b"),0.8))
+            for x in grid_values(lo[0],hi[0],step):
+                p.drawLine(point((x,lo[1])),point((x,hi[1])))
+            for y in grid_values(lo[1],hi[1],step):
+                p.drawLine(point((lo[0],y)),point((hi[0],y)))
+            p.setPen(QPen(QColor("#6b8198"),1.2))
+            if lo[0]<=0<=hi[0]:
+                p.drawLine(point((0,lo[1])),point((0,hi[1])))
+            if lo[1]<=0<=hi[1]:
+                p.drawLine(point((lo[0],0)),point((hi[0],0)))
 
         def shape(rings):
             path=QPainterPath()
@@ -53,8 +171,6 @@ class BoardWidget(QWidget):
                 path.closeSubpath()
             return path
 
-        p.setPen(QColor("#a8bacc"))
-        p.drawText(QPointF(20,25),"XY / Imported geometry — canonical coordinates")
         if project.outline and ("outline",0) not in self.hidden_layers:
             outline=shape((project.outline.exterior,*project.outline.holes))
             p.fillPath(outline,QColor("#304c43"))
@@ -80,6 +196,18 @@ class BoardWidget(QWidget):
                 pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 p.setPen(pen)
                 p.drawLine(point(slot.start),point(slot.end))
+        p.setPen(QPen(QColor("#80d8ff"),1.5))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for xy in self.measure_points:
+            p.drawEllipse(point(xy),4,4)
+        if len(self.measure_points)==2:
+            a,b=self.measure_points
+            p.drawLine(point(a),point(b))
+            dx,dy,d=measure(a,b)
+            p.drawText((point(a)+point(b))/2+QPointF(5,-8),f"{d:.3f} mm")
+        p.restore()
         p.setPen(QColor("#a8bacc"))
+        p.drawText(QPointF(20,25),"XY / Imported geometry — canonical coordinates")
+        grid=f" | Grid {self.viewport.grid_step(self.plot_rect()):g} mm" if self.show_grid else ""
         p.drawText(QPointF(20,self.height()-14),
-                   f"Input extent: {xmax-xmin:.3f} x {ymax-ymin:.3f} mm | No mirroring")
+                   f"Input extent: {xmax-xmin:.3f} x {ymax-ymin:.3f} mm{grid} | Zoom {self.viewport.zoom:.2f}x")

@@ -14,6 +14,9 @@ w.show()
 root=Path(__file__).resolve().parents[1]/"examples"/"synthetic_board"
 assert w.import_files(name="Synthetic board 30 x 20 mm",bottom=str(root/"bottom.gbr"),
                       drills=(str(root/"drills.drl"),),outline=str(root/"outline.gbr")),w.message.text()
+w.measure.setChecked(True)
+w.board.measure_at((5,10))
+w.board.measure_at((25,10))
 app.processEvents()
 out=Path(sys.argv[1])
 out.mkdir(parents=True,exist_ok=True)

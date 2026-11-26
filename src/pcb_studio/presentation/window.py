@@ -86,6 +86,25 @@ class StudioWindow(QWidget):
         split.addWidget(panel)
         split.setSizes([205,680,235])
         layout.addWidget(split,1)
+        self.inspect_bar=QFrame()
+        inspect=QHBoxLayout(self.inspect_bar)
+        inspect.setContentsMargins(0,0,0,0)
+        self.fit=QPushButton("Fit to View")
+        self.fit.clicked.connect(self.board.fit_view)
+        self.grid=QCheckBox("Grid")
+        self.grid.setChecked(True)
+        self.grid.toggled.connect(self.board.set_grid)
+        self.measure=QCheckBox("Measure")
+        self.measure.toggled.connect(self.board.set_measure)
+        self.cursor=QLabel("Cursor: —")
+        self.measurement=QLabel("Measurement: —")
+        self.board.cursor_changed.connect(self.cursor.setText)
+        self.board.measurement_changed.connect(self.measurement.setText)
+        for widget in (self.fit,self.grid,self.measure,self.cursor,self.measurement):
+            inspect.addWidget(widget)
+        inspect.addStretch()
+        layout.addWidget(self.inspect_bar)
+        self.inspect_bar.hide()
         controls=QHBoxLayout()
         self.previous=QPushButton("Previous")
         self.next=QPushButton("Next")
@@ -119,6 +138,7 @@ class StudioWindow(QWidget):
 
     def set_preview(self,data):
         self.project=None
+        self.inspect_bar.hide()
         self.views.setCurrentWidget(self.canvas)
         self.data=data
         self.canvas.set_data(data)
@@ -164,7 +184,9 @@ class StudioWindow(QWidget):
     def set_project(self,project):
         self.data=None
         self.project=project
+        self.measure.setChecked(False)
         self.board.set_project(project)
+        self.inspect_bar.show()
         self.views.setCurrentWidget(self.board)
         self.tree.blockSignals(True)
         self.tree.clear()
