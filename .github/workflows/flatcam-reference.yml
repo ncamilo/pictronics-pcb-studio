@@ -38,14 +38,23 @@ jobs:
       - name: Export reference with upstream parser
         env:
           QT_QPA_PLATFORM: offscreen
-          PCB_REFERENCE_FIXTURE: ${{ github.workspace }}/examples/synthetic_board
-          PCB_REFERENCE_RESULT: ${{ runner.temp }}/flatcam-reference.json
         run: |
           cp research/flatcam/export_reference.py upstream-flatcam/tests/test_pcb_studio_reference.py
           cd upstream-flatcam
-          "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_reference.py -v -s
+          status=0
+          for fixture in "$GITHUB_WORKSPACE/examples/synthetic_board" "$GITHUB_WORKSPACE"/research/flatcam/fixtures/*/; do
+            name=$(basename "$fixture")
+            PCB_REFERENCE_FIXTURE="$fixture" PCB_REFERENCE_RESULT="$RUNNER_TEMP/reference-$name.json" \
+              "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_reference.py -v -s || status=1
+          done
+          exit "$status"
       - name: Compare using isolated PCB Studio environment
         run: |
           python -m venv "$RUNNER_TEMP/studio-env"
           "$RUNNER_TEMP/studio-env/bin/python" -m pip install -e . gerbonara==1.6.3 numpy==2.2.6 shapely==2.1.2
-          "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_reference.py examples/synthetic_board "$RUNNER_TEMP/flatcam-reference.json"
+          status=0
+          for fixture in examples/synthetic_board research/flatcam/fixtures/*/; do
+            name=$(basename "$fixture")
+            "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_reference.py "$fixture" "$RUNNER_TEMP/reference-$name.json" || status=1
+          done
+          exit "$status"
