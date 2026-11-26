@@ -1,11 +1,20 @@
 name: FlatCAM reference
 on:
   push:
-    branches: [feature/arc-preview]
+    branches: [main]
     paths:
       - 'research/flatcam/**'
       - '.github/workflows/flatcam-reference.yml'
       - 'examples/synthetic_board/**'
+      - 'src/pcb_studio/**'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'research/flatcam/**'
+      - '.github/workflows/flatcam-reference.yml'
+      - 'examples/synthetic_board/**'
+      - 'src/pcb_studio/**'
+      - 'pyproject.toml'
   workflow_dispatch:
 permissions:
   contents: read
