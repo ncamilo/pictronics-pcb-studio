@@ -334,3 +334,15 @@ def test_kicad_two_tools_same_diameter_negative_y(tmp_path):
     assert len(layer.drills)==2
     assert [d.center for d in layer.drills]==[(4.1,-3.5),(8.2,-6.7)]
     assert [d.diameter_mm for d in layer.drills]==[0.8,0.8]
+
+def test_kicad_warning_filter_is_specific(tmp_path):
+    from types import SimpleNamespace
+    from pcb_studio.infrastructure.cam.gerbonara_adapter import _known_kicad_absolute_warning
+    p=tmp_path/"plated.drl"
+    text=EMPTY_NPTH.replace("NonPlated,1,2,NPTH","Plated,1,2,PTH")
+    p.write_text(text,encoding="ascii")
+    benign=SimpleNamespace(message='file:10 "G90": G90 header statement found after end of header')
+    assert _known_kicad_absolute_warning(p,benign)
+    assert not _known_kicad_absolute_warning(p,SimpleNamespace(message="Unknown tool"))
+    p.write_text(text.replace("G05","G05\nG91"),encoding="ascii")
+    assert not _known_kicad_absolute_warning(p,benign)

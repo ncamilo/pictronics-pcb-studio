@@ -20,13 +20,33 @@ from pcb_studio.infrastructure.cam.copper_composition import compose_copper
 QUAD_SEGS = 64
 
 
+def _known_kicad_absolute_warning(path, warning):
+    """Accept only the harmless G90 placement in explicit metric KiCad files."""
+    if not str(warning.message).endswith('"G90": G90 header statement found after end of header'):
+        return False
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    commands = [line.strip() for line in lines
+                if line.strip() and not line.lstrip().startswith(";")]
+    return (commands[:3] == ["M48", "FMAT,2", "METRIC"]
+            and commands.count("%") == 1 and commands.count("G90") == 1
+            and commands[commands.index("%")+1:commands.index("%")+3] == ["G90", "G05"]
+            and not any(line.startswith("G91") for line in commands)
+            and commands[-1] == "M30"
+            and any(line.startswith("; #@! TF.FileFunction,Plated,") for line in lines))
+
+
 def _load(file_type, path):
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             layer = file_type.open(path)
-        if caught:
-            raise PCBImportError("Parser warning: " + str(caught[0].message))
+        remaining = [w for w in caught if not (
+            file_type is ExcellonFile and _known_kicad_absolute_warning(path, w))]
+        if remaining:
+            raise PCBImportError("Parser warning: " + str(remaining[0].message))
         if not layer.objects:
             raise PCBImportError("No graphic objects")
         return layer
