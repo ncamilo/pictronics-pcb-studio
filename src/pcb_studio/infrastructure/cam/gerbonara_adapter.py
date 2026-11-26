@@ -157,20 +157,52 @@ class GerbonaraImporter:
         return DrillLayer(str(path), tuple(drills), tuple(slots))
 
     def outline(self, path):
+        """One board exterior with optional strictly internal, disjoint cutouts."""
         layer = _load(GerberFile, path)
-        segments = []
-        for obj in layer.objects:
-            if _name(obj) != "Line" or not obj.polarity_dark:
-                raise PCBImportError("Only dark straight outline segments are supported")
-            _solid_aperture(obj, {"CircleAperture"})
-            start, end = _point(obj, "x1", "y1"), _point(obj, "x2", "y2")
-            if start == end or not all(math.isfinite(v) for pt in (start, end) for v in pt):
-                raise PCBImportError("Invalid outline segment")
-            segments.append(LineString([start, end]))
-        merged = linemerge(segments)
-        if merged.geom_type != "LineString" or not merged.is_ring:
-            raise PCBImportError("Expected exactly one closed simple outline")
-        polygon = Polygon(merged.coords)
-        if not polygon.is_valid or polygon.area <= 0:
-            raise PCBImportError("Invalid outline")
-        return BoardOutline(str(path), _ring(merged.coords))
+        try:
+            segments = []
+            for obj in layer.objects:
+                kind = _name(obj)
+                if kind not in ("Line", "Arc") or not obj.polarity_dark:
+                    raise PCBImportError("Only dark line and arc outlines are supported")
+                _solid_aperture(obj, {"CircleAperture"})
+                if kind == "Arc":
+                    primitives = list(obj.to_primitives(unit=MM))
+                    if len(primitives) != 1 or _name(primitives[0]) != "Arc":
+                        raise PCBImportError("Unsupported outline arc")
+                    segments.append(_arc_centerline(primitives[0]))
+                else:
+                    start, end = _point(obj, "x1", "y1"), _point(obj, "x2", "y2")
+                    if start == end or not all(math.isfinite(v) for pt in (start, end) for v in pt):
+                        raise PCBImportError("Invalid outline segment")
+                    segments.append(LineString([start, end]))
+
+            merged = linemerge(segments)
+            if merged.geom_type == "LineString":
+                loops = [merged]
+            elif merged.geom_type == "MultiLineString":
+                loops = list(merged.geoms)
+            else:
+                raise PCBImportError("Unsupported merged outline")
+            if not loops or any(not loop.is_ring for loop in loops):
+                raise PCBImportError("All outline loops must be closed and simple")
+            polygons = [Polygon(loop.coords) for loop in loops]
+            if any(not p.is_valid or p.area <= 0 for p in polygons):
+                raise PCBImportError("Invalid outline loop")
+            polygons.sort(key=lambda p: p.area, reverse=True)
+            outer, *holes = polygons
+            # No touching, intersecting, disjoint board islands or nested cutouts.
+            if any(not outer.contains(h) or not outer.boundary.disjoint(h.boundary) for h in holes):
+                raise PCBImportError("Cutouts must lie strictly inside one board exterior")
+            for i, hole in enumerate(holes):
+                if any(not hole.disjoint(other) for other in holes[:i]):
+                    raise PCBImportError("Cutouts must be disjoint and not nested")
+            board = Polygon(outer.exterior.coords, [h.exterior.coords for h in holes])
+            if not board.is_valid or board.area <= 0:
+                raise PCBImportError("Invalid board material polygon")
+            return BoardOutline(str(path), _ring(board.exterior.coords),
+                                tuple(_ring(h.coords) for h in board.interiors))
+        except PCBImportError:
+            raise
+        except (ValueError, TypeError, GEOSException) as exc:
+            raise PCBImportError(str(exc)) from exc

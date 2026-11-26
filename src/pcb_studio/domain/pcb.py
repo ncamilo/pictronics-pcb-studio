@@ -78,9 +78,12 @@ class DrillLayer:
 class BoardOutline:
     source: str
     exterior: Ring
+    holes: tuple[Ring, ...] = ()
 
     def __post_init__(self):
         validate_ring(self.exterior)
+        for ring in self.holes:
+            validate_ring(ring)
 
 
 @dataclass(frozen=True)

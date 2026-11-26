@@ -110,3 +110,59 @@ def test_drill_and_slot(tmp_path):
     assert layer.slots[0].start == (15, 20)
     assert layer.slots[0].end == (20, 20)
     assert layer.slots[0].diameter_mm == pytest.approx(0.8)
+
+
+def rectangle_loop(x, y, w, h):
+    def xy(a, b):
+        return f"X{round(a*1e6)}Y{round(b*1e6)}"
+    corners = [(x, y), (x+w, y), (x+w, y+h), (x, y+h), (x, y)]
+    return "G01*\n" + "\n".join(xy(a, b) + ("D02*" if i == 0 else "D01*")
+                                    for i, (a, b) in enumerate(corners))
+
+
+def outline_polygon(path):
+    board = GerbonaraImporter().outline(path)
+    return Polygon(board.exterior, board.holes)
+
+
+def test_semicircular_outline(tmp_path):
+    p = gerber(tmp_path, "%ADD10C,0.2*%\nD10*\nG75*\nG01*\n"
+               "X0Y0D02*\nX10000000Y0D01*\nG03X0Y0I-5000000J0D01*")
+    shape = outline_polygon(p)
+    assert shape.area == pytest.approx(math.pi*25/2, rel=0.001)
+    assert shape.bounds == pytest.approx((0, 0, 10, 5), abs=0.002)
+
+
+def test_circular_cutout(tmp_path):
+    p = gerber(tmp_path, "%ADD10C,0.2*%\nD10*\n" + rectangle_loop(0, 0, 30, 20)
+               + "\nG75*\nG01*\nX17000000Y10000000D02*\n"
+               "G03X17000000Y10000000I-2000000J0D01*")
+    shape = outline_polygon(p)
+    assert len(shape.interiors) == 1
+    assert shape.area == pytest.approx(600 - math.pi*4, abs=0.02)
+    assert shape.bounds == (0, 0, 30, 20)
+
+
+def test_multiple_cutouts_order_independent(tmp_path):
+    p = gerber(tmp_path, "%ADD10C,0.2*%\nD10*\n" + rectangle_loop(2, 2, 3, 4)
+               + "\n" + rectangle_loop(0, 0, 30, 20)
+               + "\n" + rectangle_loop(20, 10, 5, 2))
+    shape = outline_polygon(p)
+    assert len(shape.interiors) == 2
+    assert shape.area == 578
+
+
+@pytest.mark.parametrize("other", [(35, 1, 2, 2), (0, 3, 2, 2), (29, 3, 2, 2)])
+def test_reject_disjoint_touching_or_crossing_outline(tmp_path, other):
+    p = gerber(tmp_path, "%ADD10C,0.2*%\nD10*\n" + rectangle_loop(0, 0, 30, 20)
+               + "\n" + rectangle_loop(*other))
+    with pytest.raises(PCBImportError):
+        GerbonaraImporter().outline(p)
+
+
+@pytest.mark.parametrize("other", [(4, 4, 2, 2), (7, 7, 4, 4)])
+def test_reject_nested_or_overlapping_cutouts(tmp_path, other):
+    p = gerber(tmp_path, "%ADD10C,0.2*%\nD10*\n" + rectangle_loop(0, 0, 30, 20)
+               + "\n" + rectangle_loop(2, 2, 7, 7) + "\n" + rectangle_loop(*other))
+    with pytest.raises(PCBImportError):
+        GerbonaraImporter().outline(p)
