@@ -1,6 +1,6 @@
 """Planar coverage diagnostics; never a manufacturing authorization."""
 from dataclasses import dataclass
-from math import isfinite
+from math import isclose, isfinite
 
 from shapely.geometry import LineString
 from shapely.ops import unary_union
@@ -65,8 +65,17 @@ def measure_isolation(copper, board, diameter_mm, *, target_width_mm,
         envelope = _polygonal(copper.buffer(p.offset_mm, quad_segs=64))
         if sum(len(poly.interiors) for poly in envelope) < original_holes:
             vanished.append(p.index)
+    # Validate the partition before deriving a bounded fraction from residual.
+    # GEOS area sums can differ by floating-point roundoff.
+    if not isclose(covered.area + residual.area, target.area, rel_tol=1e-10, abs_tol=0):
+        raise ValueError("Coverage area partition inconsistent")
+    fraction = 1.0 - residual.area / target.area
+    if not 0 <= fraction <= 1:
+        if not isclose(residual.area, target.area, rel_tol=1e-10, abs_tol=0):
+            raise ValueError("Coverage fraction outside unit interval")
+        fraction = 0.0
     return CoverageReport(
-        target.area, covered.area, residual.area, covered.area / target.area,
+        target.area, covered.area, residual.area, fraction,
         residual.wkb_hex, tuple(p.index for p in previews if p.merged_components),
         tuple(vanished))
 
