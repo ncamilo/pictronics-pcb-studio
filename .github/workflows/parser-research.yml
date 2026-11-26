@@ -15,4 +15,4 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e ".[dev]" gerbonara==1.6.3
       - run: python -c "import gerbonara"
-      - run: python -m pytest tests/test_parser_research.py -v
+      - run: python -m pytest tests/test_parser_research.py tests/test_parser_geometry.py -v
