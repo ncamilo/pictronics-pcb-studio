@@ -1,7 +1,10 @@
 # RES-009 — Local aperture composition
 
-Status: submitted for CI. Previous comparator commit b76b5733e450d221e603f37c0a366ad552f973a9 passed both CI workflows.
+Status: restricted macro tests passed in research CI. Previous comparator commit b76b5733e450d221e603f37c0a366ad552f973a9 passed both CI workflows.
 
 Separate aperture exposure from layer polarity. Build each flash as a positive stamp using aperture.flash(x, y, MM, True), compose its primitives locally, then add/subtract the resulting geometry according to the original object's layer polarity. This preserves earlier copper underneath transparent aperture holes. Standard circular, rectangular and obround aperture holes and restricted macros with circle and straight outline primitives are supported for preview. Macro expressions are evaluated by Gerbonara, not by our own parser. Reject other macro primitive types (including thermal, moire, vector/center line) pending dedicated validation. No generic macro coverage claimed.
 
 Analytic tests include parameterized annulus, standard annulus, dark/clear ring over existing copper, disjoint circular macro and triangular macro; thermal is explicitly rejected. No CNC changes. Preview resolution unchanged. Source inspected: https://github.com/jaseg/gerbonara (apertures.py, graphic_objects.py, aperture_macros/parse.py and primitive.py); runtime remains pinned to 1.6.3. Direct FlatCAM parser comparison remains pending.
+
+## Verified evidence
+Commit 6808bbcb684898175027a23324543237e504ee0e: 65 tests passed on each OS (no warnings in inspected summaries), https://github.com/ncamilo/pictronics-pcb-studio/actions/runs/45865952775. A separate FlatCAM reference experiment is added in the next commit. It runs the upstream parser in its own environment at the pinned revision and compares only the existing synthetic board copper/drill data. Upstream dependencies (including GDAL and Qt) may prevent execution; workflow has a timeout and read-only permissions. No user files or physical machine access. The preliminary case-specific thresholds are research thresholds, not production tolerances. Actual comparison results remain unverified at publication.
