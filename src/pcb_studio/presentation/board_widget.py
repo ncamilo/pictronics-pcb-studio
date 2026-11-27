@@ -231,13 +231,16 @@ class BoardWidget(QWidget):
                         for xy in path[1:]:
                             paths.lineTo(point(xy))
                 p.drawPath(paths)
-                if stage["operation"]=="cutout_external":
-                    p.setPen(QPen(QColor("#f1b66e"),3,Qt.PenStyle.DashLine))
-                    for gap in self.cam["tab_gaps"]:
-                        path=QPainterPath(point(gap[0]))
-                        for xy in gap[1:]:
-                            path.lineTo(point(xy))
-                        p.drawPath(path)
+            # Retention indicators are independent of cutout visibility.
+            for i,gap in enumerate(self.cam["tab_gaps"],1):
+                a,b=point(gap[0]),point(gap[-1])
+                center=(a+b)/2
+                p.setPen(QPen(QColor("#101a27"),9,Qt.PenStyle.SolidLine))
+                p.drawLine(a,b)
+                p.setPen(QPen(QColor("#ff668c"),5,Qt.PenStyle.SolidLine))
+                p.drawLine(a,b)
+                p.drawEllipse(center,6,6)
+                p.drawText(center+QPointF(8,-8),f"T{i}")
         origin=point(self.work_frame.origin)
         sx,sy=self.work_frame.signs
         p.setPen(QPen(QColor("#56e0b2"),2))

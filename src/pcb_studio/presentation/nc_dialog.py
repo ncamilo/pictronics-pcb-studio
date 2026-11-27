@@ -6,7 +6,7 @@ from pcb_studio.domain.tools import ProcessSettings
 
 
 class NcDialog(QDialog):
-    def __init__(self,job,parent=None,*,frame=None):
+    def __init__(self,job,parent=None,*,frame=None,saved=None):
         super().__init__(parent)
         self.setWindowTitle("Export NC preview — DO NOT RUN")
         self.resize(930,410)
@@ -49,6 +49,19 @@ class NcDialog(QDialog):
             for j,widget in enumerate(widgets):
                 self.table.setCellWidget(i,j,widget)
             self.fields.append((s.operation,widgets[1:]))
+        if saved is not None:
+            setup,params=saved
+            self.thickness.setValue(setup.thickness_mm)
+            self.safe.setValue(setup.safe_z_mm)
+            self.breakthrough.setValue(setup.breakthrough_limit_mm)
+            for (_,fields),p in zip(self.fields,params):
+                d,s,z,xy,rpm=fields
+                d.setValue(p.depth_mm)
+                s.setValue(p.max_stepdown_mm)
+                z.setValue(p.plunge_mm_min)
+                if p.feed_xy_mm_min is not None:
+                    xy.setValue(p.feed_xy_mm_min)
+                rpm.setValue(p.spindle_rpm)
         layout.addWidget(self.table)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export offline previews")

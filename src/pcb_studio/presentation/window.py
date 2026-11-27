@@ -31,6 +31,8 @@ class StudioWindow(QWidget):
         self.project=None
         self.cam_geometry=None
         self.cam_job=None
+        self.project_sources=[]
+        self.nc_settings=None
         self.work_frame=WorkFrame()
         self.setWindowTitle("Pictronics PCB Studio — Offline workstation")
         self.resize(1120,760)
@@ -54,6 +56,12 @@ class StudioWindow(QWidget):
         self.import_button=QPushButton("Import PCB files")
         self.import_button.clicked.connect(self.open_import)
         bar.addWidget(self.import_button)
+        self.open_project_button=QPushButton("Open project")
+        self.open_project_button.clicked.connect(self.open_project_dialog)
+        bar.addWidget(self.open_project_button)
+        self.save_project_button=QPushButton("Save project")
+        self.save_project_button.clicked.connect(self.save_project_dialog)
+        bar.addWidget(self.save_project_button)
         self.plan_cam=QPushButton("Plan CAM preview")
         self.plan_cam.clicked.connect(self.open_cam)
         bar.addWidget(self.plan_cam)
@@ -64,7 +72,7 @@ class StudioWindow(QWidget):
         self.save_nc.clicked.connect(self.open_nc)
         bar.addWidget(self.save_nc)
         bar.addStretch()
-        bar.addWidget(QLabel("OFFLINE ONLY  |  Hardware disabled"))
+        layout.addWidget(QLabel("OFFLINE ONLY  |  Hardware disabled"))
         layout.addLayout(bar)
         split=QSplitter(Qt.Orientation.Horizontal)
         self.tree=QTreeWidget()
@@ -113,6 +121,8 @@ class StudioWindow(QWidget):
         self.work_label=QLabel("Work XY: original")
         self.work_label.setWordWrap(True)
         right.insertWidget(3,self.work_label)
+        self.tab_count=QLabel("Tabs: CAM not planned")
+        right.insertWidget(4,self.tab_count)
         self.grid=QCheckBox("Grid")
         self.grid.setChecked(True)
         self.grid.toggled.connect(self.board.set_grid)
@@ -162,8 +172,11 @@ class StudioWindow(QWidget):
         self.project=None
         self.cam_geometry=None
         self.cam_job=None
+        self.project_sources=[]
+        self.nc_settings=None
         self.work_frame=WorkFrame()
         self.work_label.setText("Work XY: demo coordinates")
+        self.tab_count.setText("Tabs: demo")
         self.inspect_bar.hide()
         self.views.setCurrentWidget(self.canvas)
         self.data=data
@@ -192,24 +205,23 @@ class StudioWindow(QWidget):
 
     def import_files(self, *, name, top="", bottom="", outline="", drills=()):
         try:
-            from pcb_studio.application.import_project import import_project
-            from pcb_studio.infrastructure.cam.gerbonara_adapter import GerbonaraImporter
-            copper=tuple((Path(path),side) for path,side in ((top,"top"),(bottom,"bottom")) if path)
-            paths=[p for p,_ in copper]+[Path(p) for p in drills]+([Path(outline)] if outline else [])
-            if len({p.resolve() for p in paths})!=len(paths):
-                raise ValueError("A file cannot be assigned more than once")
-            project=import_project(GerbonaraImporter(),name,copper_files=copper,
-                                   drill_files=tuple(Path(p) for p in drills),
-                                   outline_file=Path(outline) if outline else None)
+            from pcb_studio.infrastructure.cam.project_file import capture_sources,import_sources
+            sources=capture_sources(top,bottom,outline,drills)
+            project=import_sources(name,sources)
         except Exception as exc:
             self.message.setText(f"Import failed: {exc}")
             return False
         self.set_project(project)
+        self.project_sources=sources
+        self.refresh()
         return True
 
     def set_project(self,project):
         self.data=None
         self.project=project
+        self.project_sources=[]
+        self.nc_settings=None
+        self.tab_count.setText("Tabs: CAM not planned")
         self.cam_geometry=None
         self.cam_job=None
         self.measure.setChecked(False)
@@ -290,11 +302,19 @@ class StudioWindow(QWidget):
         except Exception as exc:
             self.message.setText(f"CAM preview failed: {exc}")
             return False
+        self.apply_cam(result,job)
+        return True
+
+    def apply_cam(self,result,job):
         if self.cam_geometry and self.cam_geometry['side']!=result['side']:
             # Explicitly select reflection again for the new side.
             self.set_work_frame(WorkFrame(self.work_frame.origin))
         self.cam_geometry=result
         self.cam_job=job
+        self.nc_settings=None
+        count=len(result['tab_gaps'])
+        self.tab_count.setText(f'Tabs: {count} | {result["settings"]["tab_width_mm"]:g} mm each' if count else 'Tabs: 0 — NO HOLDING TABS')
+        self.tab_count.setStyleSheet('color: #ff668c; font-weight: bold;')
         self.board.set_cam(result)
         root=self.tree.topLevelItem(0)
         self.tree.blockSignals(True)
@@ -319,7 +339,7 @@ class StudioWindow(QWidget):
         self.board.update()
         self.detail.setText(f'CAM geometry / {result["side"]} / {len(result["stages"])} stages')
         self.diagnostics.setText("Diagnostics:\n"+("\n".join(d["code"] for d in result["diagnostics"]) or "None reported"))
-        self.message.setText(f'CAM preview complete | residual {result["isolation_residual_mm2"]:.4f} mm2 | OFFLINE ONLY')
+        self.message.setText(f'CAM preview complete | {count} holding tabs | residual {result["isolation_residual_mm2"]:.4f} mm2 | OFFLINE ONLY')
         self.refresh()
         return True
 
@@ -345,7 +365,7 @@ class StudioWindow(QWidget):
     def open_nc(self):
         if self.cam_job is None:
             return
-        dialog=NcDialog(self.cam_job,self,frame=self.work_frame)
+        dialog=NcDialog(self.cam_job,self,frame=self.work_frame,saved=self.nc_settings)
         if dialog.exec()!=QDialog.DialogCode.Accepted:
             return
         try:
@@ -367,8 +387,47 @@ class StudioWindow(QWidget):
         except Exception as exc:
             self.message.setText(f"NC preview failed: {exc}")
             return None
+        self.nc_settings=(setup,tuple(settings))
         self.message.setText(f"Offline NC previews saved: {folder} | DO NOT RUN ON CNC")
         return folder
+
+    def write_project(self,path):
+        from pcb_studio.infrastructure.cam.project_file import save_project
+        save_project(path,self.project,self.project_sources,self.work_frame,self.cam_geometry,self.nc_settings)
+
+    def read_project(self,path):
+        try:
+            from pcb_studio.infrastructure.cam.project_file import load_project
+            project,sources,frame,cam,job,nc=load_project(path)
+        except Exception as exc:
+            self.message.setText(f"Project open failed: {exc}")
+            return False
+        self.set_project(project)
+        self.project_sources=sources
+        self.set_work_frame(frame)
+        if cam is not None:
+            self.apply_cam(cam,job)
+        self.nc_settings=nc
+        self.refresh()
+        self.message.setText("Project restored | CAM recalculated | OFFLINE ONLY")
+        return True
+
+    def save_project_dialog(self):
+        if not self.project_sources:
+            return
+        path,_=QFileDialog.getSaveFileName(self,"Save PCB project","project.pcbstudio.json","PCB Studio project (*.pcbstudio.json)")
+        if path:
+            try:
+                self.write_project(path if path.lower().endswith(".pcbstudio.json") else path+".pcbstudio.json")
+            except Exception as exc:
+                self.message.setText(f"Project save failed: {exc}")
+                return
+            self.message.setText("Project saved with embedded source files and settings")
+
+    def open_project_dialog(self):
+        path,_=QFileDialog.getOpenFileName(self,"Open PCB project","","PCB Studio project (*.pcbstudio.json)")
+        if path:
+            self.read_project(path)
 
     def layer_changed(self,item,column):
         if self.project is None:
@@ -383,6 +442,7 @@ class StudioWindow(QWidget):
             self.board.update()
 
     def refresh(self,*_):
+        self.save_project_button.setEnabled(bool(self.project_sources))
         self.work_setup.setEnabled(self.project is not None and self.project.outline is not None)
         self.plan_cam.setEnabled(self.project is not None and self.project.outline is not None)
         self.save_cam.setEnabled(self.cam_geometry is not None)
