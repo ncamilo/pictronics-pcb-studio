@@ -46,7 +46,7 @@ class CamDialog(QDialog):
         form.addRow("Tab anchors (canonical XY)",tab_row)
         self.width=number("Tab width (mm)",2,0.001,20)
         layout.addLayout(form)
-        self.tab_status=QLabel("No anchors = no tabs; diagnostic is retained in the preview.")
+        self.tab_status=QLabel("No anchors = no tabs. For panels, Place tabs presets apply to each board.")
         self.tab_status.setWordWrap(True)
         layout.addWidget(self.tab_status)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)

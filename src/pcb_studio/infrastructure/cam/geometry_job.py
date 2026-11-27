@@ -1,7 +1,7 @@
 """Offline planar CAM exchange; not machine instructions."""
 from dataclasses import replace
 from math import isfinite
-from pcb_studio.domain.pcb import BoardOutline, PanelOutline
+from pcb_studio.domain.pcb import BoardOutline, outline_boards
 from pcb_studio.infrastructure.cam.multi_tool_preview import ToolSpec
 from pcb_studio.infrastructure.cam.cutout_preview import Tab
 from pcb_studio.infrastructure.cam.job_preview import plan_job_preview
@@ -10,8 +10,6 @@ from pcb_studio.infrastructure.cam.job_preview import plan_job_preview
 def plan_geometry_job(project, *, side, diameter, target, passes, overlap, cutter,
                  stock_margin, tab_anchors=(), tab_width=2.0):
     """Choose one side without mirroring; model assumed rectangular stock."""
-    if isinstance(project.outline, PanelOutline):
-        raise ValueError("Panel CAM is not implemented; inspection only")
     layers=tuple(layer for layer in project.copper if layer.side==side)
     if len(layers)!=1 or project.outline is None:
         raise ValueError("Select one imported copper side and supply an outline")
@@ -60,6 +58,6 @@ def assumed_stock(outline,stock_margin):
     """Shared nominal rectangular stock model for preview and tab editor."""
     if outline is None or not isfinite(stock_margin) or stock_margin<=0:
         raise ValueError("Outline and positive modeled stock margin required")
-    xs,ys=zip(*outline.exterior)
+    xs,ys=zip(*(xy for board in outline_boards(outline) for xy in board.exterior))
     x0,y0,x1,y1=min(xs)-stock_margin,min(ys)-stock_margin,max(xs)+stock_margin,max(ys)+stock_margin
     return BoardOutline("assumed rectangular stock",((x0,y0),(x1,y0),(x1,y1),(x0,y1),(x0,y0)))

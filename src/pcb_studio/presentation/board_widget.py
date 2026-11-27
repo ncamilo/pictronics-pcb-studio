@@ -9,6 +9,7 @@ from pcb_studio.presentation.viewport import Viewport, grid_values, measure
 
 class BoardWidget(QWidget):
     cursor_changed = Signal(str)
+    origin_picked = Signal(object)
     measurement_changed = Signal(str)
     def __init__(self):
         super().__init__()
@@ -19,6 +20,7 @@ class BoardWidget(QWidget):
         self.viewport = None
         self.show_grid = True
         self.measuring = False
+        self.picking_origin = False
         self.measure_points = []
         self._drag = None
         self.setMouseTracking(True)
@@ -30,6 +32,8 @@ class BoardWidget(QWidget):
         self.hidden_layers.clear()
         self.measure_points.clear()
         self.measuring=False
+        self.picking_origin=False
+        self.unsetCursor()
         self._drag=None
         self.viewport=self._build_viewport(project)
         self.cursor_changed.emit("Cursor: —")
@@ -38,7 +42,15 @@ class BoardWidget(QWidget):
 
     def set_work_frame(self,frame):
         self.work_frame=frame
+        self.cursor_changed.emit("Work X —  Y —")
         self.update()
+
+    def set_pick_origin(self,checked):
+        self.picking_origin=checked
+        if checked:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.unsetCursor()
 
     def cursor_label(self,pixel):
         xy=self.world_at(pixel)
@@ -121,6 +133,11 @@ class BoardWidget(QWidget):
             self._drag=event.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
+        elif self.viewport and self.picking_origin and event.button()==Qt.MouseButton.LeftButton:
+            if QRectF(*self.plot_rect()).contains(event.position()):
+                self.origin_picked.emit(self.world_at(event.position()))
+                self.cursor_changed.emit(self.cursor_label(event.position()))
+            event.accept()
         elif self.viewport and self.measuring and event.button()==Qt.MouseButton.LeftButton:
             self.measure_at(self.world_at(event.position()))
             event.accept()
@@ -167,18 +184,22 @@ class BoardWidget(QWidget):
         p.setClipRect(plot)
         if self.show_grid:
             step=self.viewport.grid_step(self.plot_rect())
-            lo=self.world_at(plot.bottomLeft())
-            hi=self.world_at(plot.topRight())
+            corners=[self.work_frame.to_work(self.world_at(pt))
+                     for pt in (plot.bottomLeft(),plot.topRight())]
+            lo=tuple(min(a,b) for a,b in zip(*corners))
+            hi=tuple(max(a,b) for a,b in zip(*corners))
+            def work_point(xy):
+                return point(self.work_frame.to_board(xy))
             p.setPen(QPen(QColor("#34475b"),0.8))
             for x in grid_values(lo[0],hi[0],step):
-                p.drawLine(point((x,lo[1])),point((x,hi[1])))
+                p.drawLine(work_point((x,lo[1])),work_point((x,hi[1])))
             for y in grid_values(lo[1],hi[1],step):
-                p.drawLine(point((lo[0],y)),point((hi[0],y)))
+                p.drawLine(work_point((lo[0],y)),work_point((hi[0],y)))
             p.setPen(QPen(QColor("#6b8198"),1.2))
             if lo[0]<=0<=hi[0]:
-                p.drawLine(point((0,lo[1])),point((0,hi[1])))
+                p.drawLine(work_point((0,lo[1])),work_point((0,hi[1])))
             if lo[1]<=0<=hi[1]:
-                p.drawLine(point((lo[0],0)),point((hi[0],0)))
+                p.drawLine(work_point((lo[0],0)),work_point((hi[0],0)))
 
         def shape(rings):
             path=QPainterPath()
@@ -265,6 +286,6 @@ class BoardWidget(QWidget):
         p.restore()
         p.setPen(QColor("#a8bacc"))
         p.drawText(QPointF(20,25),"XY / CAM centerlines — source view, work axes shown" if self.cam else "XY / Imported geometry — source view, work axes shown")
-        grid=f" | Grid {self.viewport.grid_step(self.plot_rect()):g} mm" if self.show_grid else ""
+        grid=f" | Work grid {self.viewport.grid_step(self.plot_rect()):g} mm" if self.show_grid else ""
         p.drawText(QPointF(20,self.height()-14),
                    f"View extent: {xmax-xmin:.3f} x {ymax-ymin:.3f} mm{grid} | Zoom {self.viewport.zoom:.2f}x")

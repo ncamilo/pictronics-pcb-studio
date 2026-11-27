@@ -6,7 +6,7 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.polygon import orient
 from shapely.ops import substring, unary_union
 
-from pcb_studio.domain.pcb import BoardOutline, validate_xy
+from pcb_studio.domain.pcb import BoardOutline, PanelOutline, validate_xy
 from pcb_studio.infrastructure.cam.geometry_comparison import geometry_from_outline
 from pcb_studio.infrastructure.cam.isolation_preview import _polygonal
 
@@ -68,6 +68,8 @@ def plan_cutout_preview(outline: BoardOutline, stock: BoardOutline, diameter_mm,
     if (not all(isfinite(v) for v in (diameter_mm, margin_mm))
             or diameter_mm <= 0 or margin_mm <= 0 or type(clockwise) is not bool):
         raise ValueError("Invalid cutout settings")
+    if isinstance(outline, PanelOutline):
+        return _panel_cutout(outline, stock, diameter_mm, tuple(tabs), margin_mm, clockwise)
     board, stock_shape = map(geometry_from_outline, (outline, stock))
     _polygonal(board)
     _polygonal(stock_shape)
@@ -135,3 +137,38 @@ def plan_cutout_preview(outline: BoardOutline, stock: BoardOutline, diameter_mm,
             raise ValueError("Another cut interferes with tab")
     return CutoutPreview(tuple(map(_xy, inner_paths)), tuple(map(_xy, exterior_paths)),
                          tuple(map(_xy, gap_paths)), diameter_mm, offset, length)
+
+
+def _panel_cutout(panel, stock, diameter, tabs, margin, clockwise):
+    """Independent contours, common stock; conservative inter-board clearance."""
+    material = geometry_from_outline(panel)
+    shapes = [geometry_from_outline(b) for b in panel.boards]
+    owned = [[] for _ in shapes]
+    for tab in tabs:
+        if not isinstance(tab, Tab):
+            raise ValueError("Expected Tab")
+        matches = [i for i,b in enumerate(shapes) if b.exterior.distance(Point(tab.anchor)) <= 1e-8]
+        if len(matches)!=1:
+            raise ValueError("Tab anchor must belong to exactly one board")
+        owned[matches[0]].append(tab)
+    plans = [plan_cutout_preview(b,stock,diameter,tabs=ts,margin_mm=margin,clockwise=clockwise)
+             for b,ts in zip(panel.boards,owned)]
+    cuts = [unary_union([LineString(p) for p in (*r.internal_paths,*r.exterior_paths)])
+            for r in plans]
+    radius = diameter/2
+    for i,cut in enumerate(cuts):
+        if cut.distance(material) < radius:
+            raise ValueError("Panel cut intersects retained board material")
+        for previous in cuts[:i]:
+            if cut.distance(previous) < diameter:
+                raise ValueError("Insufficient inter-board cutter clearance")
+    all_cuts = unary_union(cuts)
+    for plan,ts in zip(plans,owned):
+        for gap,tab in zip(plan.tab_gaps,ts):
+            center=LineString(gap).interpolate(0.5,normalized=True)
+            if center.distance(all_cuts)<radius+tab.width_mm/2-1e-8:
+                raise ValueError("Panel cut interferes with holding tab")
+    return CutoutPreview(tuple(p for r in plans for p in r.internal_paths),
+                         tuple(p for r in plans for p in r.exterior_paths),
+                         tuple(p for r in plans for p in r.tab_gaps),
+                         diameter, radius+margin,sum(r.exterior_full_length_mm for r in plans))

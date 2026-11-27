@@ -6,7 +6,7 @@ from shapely import get_coordinates
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
 
-from pcb_studio.domain.pcb import BoardOutline, CopperLayer
+from pcb_studio.domain.pcb import BoardOutline, CopperLayer, PanelOutline
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,10 @@ def geometry_from_copper(layer: CopperLayer):
 
 
 def geometry_from_outline(outline: BoardOutline):
+    if isinstance(outline, PanelOutline):
+        result = MultiPolygon([Polygon(b.exterior,b.holes) for b in outline.boards])
+        _check(result)
+        return result
     return Polygon(outline.exterior, outline.holes)
 
 

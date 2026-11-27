@@ -43,6 +43,16 @@ class WorkFrameDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        candidates=[('board',corner_frame(board_bounds,frame.mirror).origin),
+                    ('center',((board_bounds[0]+board_bounds[2])/2,(board_bounds[1]+board_bounds[3])/2)),
+                    ('original',(0,0))]
+        if stock_bounds is not None:
+            candidates.insert(0,('stock',corner_frame(stock_bounds,frame.mirror).origin))
+        for key,xy in candidates:
+            if frame.origin==xy:
+                self.preset.setCurrentIndex(self.preset.findData(key))
+                break
+        self.refresh()
 
     def refresh(self,*_):
         key=self.preset.currentData()
@@ -69,4 +79,6 @@ class WorkFrameDialog(QDialog):
         if key=="center":
             a,b,c,d=self.board_bounds
             return WorkFrame(((a+c)/2,(b+d)/2),mirror)
+        if key=="original":
+            return WorkFrame((0,0),mirror)
         return WorkFrame((self.x.value(),self.y.value()),mirror)

@@ -5,6 +5,7 @@ from PySide6.QtGui import QPainter,QPen,QColor,QPainterPath
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
                                QDialogButtonBox)
 from pcb_studio.presentation.board_widget import BoardWidget
+from pcb_studio.domain.pcb import outline_boards
 from pcb_studio.presentation.viewport import Viewport
 from pcb_studio.infrastructure.cam.geometry_job import assumed_stock
 from pcb_studio.infrastructure.cam.tab_layout import snap_exterior,preset_anchors,preview_tabs
@@ -63,7 +64,7 @@ class TabDialog(QDialog):
         self.anchors=tuple(tuple(xy) for xy in anchors)
         layout=QVBoxLayout(self)
         note=QLabel(f"Full-height tabs | Width {width:g} mm | Cutter {cutter:g} mm | "
-                    f"Nominal gap {width+cutter:g} mm. Left click near exterior to add; "
+                    f"Nominal gap {width+cutter:g} mm | {len(outline_boards(self.outline))} boards. Presets apply per board. Left click near exterior to add; "
                     "right click near a numbered anchor to remove. Wheel zoom; middle drag to pan.")
         note.setWordWrap(True)
         layout.addWidget(note)

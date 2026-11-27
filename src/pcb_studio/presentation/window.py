@@ -119,6 +119,10 @@ class StudioWindow(QWidget):
         self.fit.clicked.connect(self.board.fit_view)
         self.work_setup=QPushButton("Work XY setup")
         self.work_setup.clicked.connect(self.open_work_frame)
+        self.pick_zero=QPushButton("Pick XY zero")
+        self.pick_zero.setCheckable(True)
+        self.pick_zero.toggled.connect(self.board.set_pick_origin)
+        self.board.origin_picked.connect(self.pick_work_origin)
         self.work_label=QLabel("Work XY: original")
         self.work_label.setWordWrap(True)
         right.insertWidget(3,self.work_label)
@@ -133,7 +137,7 @@ class StudioWindow(QWidget):
         self.measurement=QLabel("Measurement: —")
         self.board.cursor_changed.connect(self.cursor.setText)
         self.board.measurement_changed.connect(self.measurement.setText)
-        for widget in (self.fit,self.work_setup,self.grid,self.measure,self.cursor,self.measurement):
+        for widget in (self.fit,self.work_setup,self.pick_zero,self.grid,self.measure,self.cursor,self.measurement):
             inspect.addWidget(widget)
         inspect.addStretch()
         layout.addWidget(self.inspect_bar)
@@ -226,6 +230,7 @@ class StudioWindow(QWidget):
         self.cam_geometry=None
         self.cam_job=None
         self.measure.setChecked(False)
+        self.pick_zero.setChecked(False)
         self.board.set_project(project)
         self.set_work_frame(corner_frame(self.outline_bounds()) if project.outline else WorkFrame())
         self.inspect_bar.show()
@@ -254,7 +259,7 @@ class StudioWindow(QWidget):
         self.diagnostics.setText("CAM not planned"+("\nOutline not supplied" if project.outline is None else ""))
         if isinstance(project.outline,PanelOutline):
             self.detail.setText(f"Panel: {len(project.outline.boards)} boards")
-            self.diagnostics.setText("Panel CAM not implemented; inspection and saving only")
+            self.diagnostics.setText("CAM not planned | Use Plan CAM preview for all boards")
             self.message.setText("Panel imported | No toolpaths generated | OFFLINE ONLY")
         else:
             self.message.setText("Import complete | No toolpaths generated | Not manufacturing-ready")
@@ -268,7 +273,12 @@ class StudioWindow(QWidget):
         self.work_frame=frame
         self.board.set_work_frame(frame)
         x,y=frame.origin
-        self.work_label.setText(f"Work zero: source ({x:.3f}, {y:.3f}) mm | Mirror: {frame.mirror}")
+        self.work_label.setText(f"Work X0 Y0 = source ({x:.3f}, {y:.3f}) mm | Mirror: {frame.mirror}")
+
+    def pick_work_origin(self,xy):
+        self.set_work_frame(WorkFrame(tuple(xy),self.work_frame.mirror))
+        self.pick_zero.setChecked(False)
+        self.message.setText("Selected point is work X0 Y0 | Re-export NC after origin change")
 
     def open_work_frame(self):
         if self.project is None or self.project.outline is None:
@@ -277,10 +287,10 @@ class StudioWindow(QWidget):
         dialog=WorkFrameDialog(self.outline_bounds(),stock,self.work_frame,self)
         if dialog.exec()==QDialog.DialogCode.Accepted:
             self.set_work_frame(dialog.selection())
-            self.message.setText("Work XY updated | Source view unchanged | Applies to all exported stages")
+            self.message.setText("Work XY updated | Grid and cursor relative to zero | Re-export NC")
 
     def open_cam(self):
-        if self.project is None or not isinstance(self.project.outline,BoardOutline):
+        if self.project is None or self.project.outline is None:
             return
         dialog=CamDialog(self.project,self)
         if self.cam_geometry is not None:
@@ -451,7 +461,8 @@ class StudioWindow(QWidget):
     def refresh(self,*_):
         self.save_project_button.setEnabled(bool(self.project_sources))
         self.work_setup.setEnabled(self.project is not None and self.project.outline is not None)
-        self.plan_cam.setEnabled(self.project is not None and isinstance(self.project.outline,BoardOutline))
+        self.plan_cam.setEnabled(self.project is not None and self.project.outline is not None)
+        self.pick_zero.setEnabled(self.project is not None and self.project.outline is not None)
         self.save_cam.setEnabled(self.cam_geometry is not None)
         self.save_nc.setEnabled(self.cam_job is not None)
         self.previous.setEnabled(self.data is not None and self.slider.value()>0)

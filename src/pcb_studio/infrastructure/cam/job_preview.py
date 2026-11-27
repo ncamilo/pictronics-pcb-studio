@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Literal
 
-from shapely.geometry import LineString
-from pcb_studio.domain.pcb import BoardOutline, PCBProject, validate_xy
+from shapely.geometry import LineString, Point
+from pcb_studio.domain.pcb import BoardOutline, PanelOutline, PCBProject, validate_xy
 from pcb_studio.infrastructure.cam.geometry_comparison import (
     geometry_from_copper, geometry_from_outline,
 )
@@ -75,8 +75,8 @@ def plan_job_preview(project: PCBProject, stock: BoardOutline, *,
         raise ValueError("Expected named PCBProject")
     if project.outline is None:
         raise ValueError("Board outline required")
-    if not isinstance(project.outline, BoardOutline):
-        raise ValueError("Panel CAM is not implemented; inspection only")
+    if not isinstance(project.outline, (BoardOutline, PanelOutline)):
+        raise ValueError("Unsupported board outline")
     if len(project.copper) != 1:
         raise ValueError("Job preview requires exactly one copper side")
     if not isinstance(stock, BoardOutline):
@@ -131,5 +131,10 @@ def plan_job_preview(project: PCBProject, stock: BoardOutline, *,
                            sum(LineString(p).length for p in cutout.exterior_paths)))
     if not cutout.tab_gaps:
         diagnostics.append(JobDiagnostic("no_external_tabs", "No external bridge specified"))
+    if isinstance(project.outline, PanelOutline):
+        missing=[i+1 for i,b in enumerate(project.outline.boards)
+                 if not any(LineString(b.exterior).distance(Point(t.anchor))<=1e-8 for t in tabs)]
+        if missing:
+            diagnostics.append(JobDiagnostic("panel_boards_without_tabs",str(missing)))
     return JobPreview(project.name, project.copper[0].side, isolation, drilling,
                       cutout, tuple(stages), tuple(diagnostics))
