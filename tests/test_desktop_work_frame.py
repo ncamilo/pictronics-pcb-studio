@@ -108,3 +108,25 @@ def test_snap_exact_corner_and_cancel(window,app):
     QTest.mouseClick(window.board,Qt.MouseButton.RightButton,pos=pixel)
     assert not window.pick_zero.isChecked()
     assert window.work_frame==old
+
+
+def test_cached_paths_survive_view_changes(window,app):
+    from PySide6.QtCore import QPointF
+    assert load(window)
+    assert window.generate_cam(**SETTINGS)
+    b=window.board
+    cached=(b._outline_paths,b._copper_paths,b._cam_paths)
+    for mirror in ("none","x","y"):
+        window.set_work_frame(WorkFrame((30,20),mirror))
+        b.viewport.zoom_at((100,120),2,b.plot_rect())
+        b.viewport.translate(25,-15)
+        for xy in ((0,0),(5,10),(30,20)):
+            p=b.source_transform().map(QPointF(*xy))
+            expected=b.screen_at(xy)
+            assert (p.x(),p.y())==pytest.approx((expected.x(),expected.y()))
+        app.processEvents()
+        assert not b.grab().isNull()
+        assert all(a is c for a,c in zip(cached,(b._outline_paths,b._copper_paths,b._cam_paths)))
+    assert load(window)
+    assert b._copper_paths is not cached[1]
+    assert b._cam_paths==()

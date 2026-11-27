@@ -367,3 +367,17 @@ def test_panel_still_rejects_invalid_intersections(tmp_path,other):
     p=gerber(tmp_path,"%ADD10C,0.05*%\nD10*\n"+rectangle_loop(0,0,30,20)+"\n"+rectangle_loop(*other))
     with pytest.raises(PCBImportError):
         GerbonaraImporter(allow_panel=True).outline(p)
+
+
+def test_flash_cache_reuses_shape_and_preserves_polarity(tmp_path,monkeypatch):
+    from gerbonara import GerberFile
+    from pcb_studio.infrastructure.cam.gerbonara_adapter import _flash_geometry
+    p=gerber(tmp_path,"%ADD10R,4X2*%\nD10*\nX10000000Y20000000D03*\n%LPC*%\nX15000000Y-5000000D03*")
+    objects=GerberFile.open(p).objects
+    cache={}
+    expected=[_flash_geometry(o) for o in objects]
+    actual=[_flash_geometry(o,cache) for o in objects]
+    assert len(cache)==1
+    for a,b in zip(actual,expected):
+        assert a.symmetric_difference(b).area<1e-10
+    assert actual[1].bounds==pytest.approx((13,-6,17,-4))

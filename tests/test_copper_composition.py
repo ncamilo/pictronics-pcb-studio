@@ -47,3 +47,31 @@ def test_gerber_rectangle_polarity_integration(tmp_path):
     expected = box(0, 0, 10, 10).difference(box(2, 2, 8, 8)).union(box(4, 4, 6, 6))
     assert result.area == pytest.approx(68)
     assert result.symmetric_difference(expected).area == pytest.approx(0)
+
+
+def test_batched_polarities_against_sequential():
+    from shapely.geometry import GeometryCollection, Point
+    from shapely import get_num_geometries
+    operations=[]
+    for i in range(6):
+        operations.extend((Point(i*3+j*0.4,0).buffer(0.7),True) for j in range(6))
+    operations.extend((box(i*3-0.1,-0.2,i*3+0.1,0.2),False) for i in range(6))
+    operations.extend((box(i*3-0.05,-0.05,i*3+0.05,0.05),True) for i in range(6))
+    expected=GeometryCollection()
+    for g,dark in operations:
+        expected=expected.union(g) if dark else expected.difference(g)
+    actual=compose_copper(iter(operations))
+    assert actual.is_valid
+    assert actual.symmetric_difference(expected).area<1e-10
+    assert get_num_geometries(actual)==get_num_geometries(expected)
+
+
+def test_batch_boundary_and_invalid_late_input(monkeypatch):
+    import pcb_studio.infrastructure.cam.copper_composition as module
+    monkeypatch.setattr(module,"BATCH_SIZE",2)
+    ops=[(box(i,0,i+2,2),True) for i in range(5)]
+    ops += [(box(1,0,2,2),False),(box(3,0,4,2),False),(box(5,0,6,2),False)]
+    ops += [(box(1,0,2,2),True)]
+    assert compose_copper(ops).area==8
+    with pytest.raises(ValueError):
+        compose_copper(ops+[(LineString([(0,0),(1,1)]),True)])

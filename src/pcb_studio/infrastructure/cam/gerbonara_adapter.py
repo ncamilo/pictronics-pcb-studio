@@ -139,7 +139,7 @@ def _primitive_geometry(p):
     raise PCBImportError(f"Unsupported graphic primitive: {kind}")
 
 
-def _flash_geometry(obj):
+def _flash_geometry(obj, cache=None):
     """Compose an aperture locally before applying its layer polarity."""
     aperture = obj.aperture
     kind = _name(aperture)
@@ -156,7 +156,15 @@ def _flash_geometry(obj):
     # Ask the aperture for a DARK stamp, regardless of the object's polarity.
     # Clear primitive exposure is local transparency, not a layer erase.
     x, y = _point(obj, "x", "y")
-    primitives = list(aperture.flash(x, y, MM, True))
+    if not math.isfinite(x) or not math.isfinite(y):
+        raise PCBImportError("Non-finite flash coordinates")
+    # Identity cache scoped to a single parsed layer. Retain the aperture
+    # reference, so an id cannot be recycled. Never key only by pad diameter.
+    key = id(aperture)
+    if cache is not None and key in cache:
+        return affinity.translate(cache[key][1], xoff=x, yoff=y)
+    primitives = list(aperture.flash(0, 0, MM, True) if cache is not None
+                      else aperture.flash(x, y, MM, True))
     if not primitives:
         raise PCBImportError("Empty aperture")
     if len(primitives) > 10000:
@@ -165,6 +173,10 @@ def _flash_geometry(obj):
                               for p in primitives)
     if geometry.is_empty:
         raise PCBImportError("Empty composed aperture")
+    if cache is not None:
+        if len(cache) < 4096:
+            cache[key] = (aperture, geometry)
+        return affinity.translate(geometry, xoff=x, yoff=y)
     return geometry
 
 
@@ -182,11 +194,12 @@ class GerbonaraImporter:
         layer = _load(GerberFile, path)
         try:
             operations = []
+            aperture_cache = {}
             for obj in layer.objects:
                 kind = _name(obj)
                 if kind == "Flash":
                     try:
-                        stamp = _flash_geometry(obj)
+                        stamp = _flash_geometry(obj, aperture_cache)
                     except PCBImportError as exc:
                         raise PCBImportError(f"{Path(path).name}, flash at {_point(obj, 'x', 'y')} mm: {exc}") from exc
                     operations.append((stamp, bool(obj.polarity_dark)))

@@ -1,6 +1,6 @@
 """Render immutable source geometry in a shared work XY frame."""
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QTransform
 from PySide6.QtWidgets import QWidget
 from pcb_studio.domain.work_frame import WorkFrame, reference_points, snap_reference
 from pcb_studio.domain.pcb import outline_boards
@@ -16,6 +16,9 @@ class BoardWidget(QWidget):
         super().__init__()
         self.project = None
         self.cam = None
+        self._outline_paths = ()
+        self._copper_paths = ()
+        self._cam_paths = ()
         self.work_frame = WorkFrame()
         self.hidden_layers = set()
         self.viewport = None
@@ -32,6 +35,11 @@ class BoardWidget(QWidget):
     def set_project(self, project):
         self.project = project
         self.cam = None
+        self._outline_paths = tuple(self._polygon_path((b.exterior,*b.holes))
+                                    for b in outline_boards(project.outline))
+        self._copper_paths = tuple(tuple(self._polygon_path((p.exterior,*p.holes))
+                                         for p in layer.polygons) for layer in project.copper)
+        self._cam_paths = ()
         self.hidden_layers.clear()
         self.measure_points.clear()
         self.measuring=False
@@ -100,6 +108,7 @@ class BoardWidget(QWidget):
 
     def set_cam(self,data):
         self.cam=data
+        self._cam_paths=tuple(self._stage_path(stage) for stage in data['stages'])
         self.hidden_layers={key for key in self.hidden_layers if key[0]!='cam'}
         self.source_bounds=tuple(data['stock_bounds'])
         self.reframe()
@@ -131,6 +140,37 @@ class BoardWidget(QWidget):
 
     def screen_at(self,xy):
         return QPointF(*self.viewport.screen(self.work_frame.to_work(xy),self.plot_rect()))
+
+    @staticmethod
+    def _polygon_path(rings):
+        path=QPainterPath()
+        path.setFillRule(Qt.FillRule.OddEvenFill)
+        for ring in rings:
+            path.moveTo(*ring[0])
+            for xy in ring[1:]:
+                path.lineTo(*xy)
+            path.closeSubpath()
+        return path
+
+    @staticmethod
+    def _stage_path(stage):
+        path=QPainterPath()
+        markers=[]
+        for line in stage["paths"]:
+            if len(line)==1:
+                markers.append(line[0])
+            else:
+                path.moveTo(*line[0])
+                for xy in line[1:]:
+                    path.lineTo(*xy)
+        return path,tuple(markers)
+
+    def source_transform(self):
+        # Native Qt affine transform; no per-vertex Python projection on repaint.
+        origin=self.screen_at((0,0))
+        scale=self.viewport.scale(self.plot_rect())
+        sx,sy=self.work_frame.signs
+        return QTransform(sx*scale,0,0,-sy*scale,origin.x(),origin.y())
 
     def fit_view(self):
         if self.viewport:
@@ -256,19 +296,11 @@ class BoardWidget(QWidget):
             if lo[1]<=0<=hi[1]:
                 p.drawLine(work_point((lo[0],0)),work_point((hi[0],0)))
 
-        def shape(rings):
-            path=QPainterPath()
-            path.setFillRule(Qt.FillRule.OddEvenFill)
-            for ring in rings:
-                path.moveTo(point(ring[0]))
-                for xy in ring[1:]:
-                    path.lineTo(point(xy))
-                path.closeSubpath()
-            return path
+        transform=self.source_transform()
 
         if project.outline and ("outline",0) not in self.hidden_layers:
-            for board in outline_boards(project.outline):
-                outline=shape((board.exterior,*board.holes))
+            for cached in self._outline_paths:
+                outline=transform.map(cached)
                 p.fillPath(outline,QColor("#304c43"))
                 p.setPen(QPen(QColor("#9ab7a5"),1.5))
                 p.drawPath(outline)
@@ -277,8 +309,8 @@ class BoardWidget(QWidget):
                 continue
             color=QColor("#dfb85d" if layer.side=="bottom" else "#df895c")
             color.setAlpha(210)
-            for poly in layer.polygons:
-                p.fillPath(shape((poly.exterior,*poly.holes)),color)
+            for cached in self._copper_paths[i]:
+                p.fillPath(transform.map(cached),color)
         for i,layer in enumerate(project.drills):
             if ("drill",i) in self.hidden_layers:
                 continue
@@ -300,15 +332,10 @@ class BoardWidget(QWidget):
                 if ("cam",i) in self.hidden_layers:
                     continue
                 p.setPen(QPen(QColor(colors[stage["operation"]]),1.6))
-                paths=QPainterPath()
-                for path in stage["paths"]:
-                    if len(path)==1:
-                        paths.addEllipse(point(path[0]),4,4)
-                    else:
-                        paths.moveTo(point(path[0]))
-                        for xy in path[1:]:
-                            paths.lineTo(point(xy))
-                p.drawPath(paths)
+                cached,markers=self._cam_paths[i]
+                p.drawPath(transform.map(cached))
+                for xy in markers:
+                    p.drawEllipse(point(xy),4,4)
             # Retention indicators are independent of cutout visibility.
             for i,gap in enumerate(self.cam["tab_gaps"],1):
                 a,b=point(gap[0]),point(gap[-1])
