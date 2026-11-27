@@ -264,6 +264,17 @@ class StudioWindow(QWidget):
         if self.project is None:
             return
         dialog=CamDialog(self.project,self)
+        if self.cam_geometry is not None:
+            s=self.cam_geometry['settings']
+            dialog.side.setCurrentIndex(dialog.side.findData(self.cam_geometry['side']))
+            dialog.diameter.setValue(s['effective_isolation_diameter_mm'])
+            dialog.target.setValue(s['target_width_mm'])
+            dialog.passes.setValue(s['passes'])
+            dialog.overlap.setValue(s['overlap']*100)
+            dialog.cutter.setValue(s['cutout_diameter_mm'])
+            dialog.margin.setValue(s['stock_margin_mm'])
+            dialog.width.setValue(s['tab_width_mm'])
+            dialog.anchors.setText('; '.join(f'{x!r},{y!r}' for x,y in s['tab_anchors']))
         if dialog.exec()==QDialog.DialogCode.Accepted:
             try:
                 settings=dialog.selection()

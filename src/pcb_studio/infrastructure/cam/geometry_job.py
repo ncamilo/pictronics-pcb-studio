@@ -13,11 +13,9 @@ def plan_geometry_job(project, *, side, diameter, target, passes, overlap, cutte
     layers=tuple(layer for layer in project.copper if layer.side==side)
     if len(layers)!=1 or project.outline is None:
         raise ValueError("Select one imported copper side and supply an outline")
-    if not isfinite(stock_margin) or stock_margin<=0:
-        raise ValueError("Positive modeled stock margin required")
-    xs,ys=zip(*project.outline.exterior)
-    x0,y0,x1,y1=min(xs)-stock_margin,min(ys)-stock_margin,max(xs)+stock_margin,max(ys)+stock_margin
-    stock=BoardOutline("assumed rectangular stock",((x0,y0),(x1,y0),(x1,y1),(x0,y1),(x0,y0)))
+    stock=assumed_stock(project.outline,stock_margin)
+    xs,ys=zip(*stock.exterior)
+    x0,y0,x1,y1=min(xs),min(ys),max(xs),max(ys)
     tabs=tuple(Tab(tuple(xy),tab_width) for xy in tab_anchors)
     job=plan_job_preview(replace(project,copper=layers),stock,
                          isolation_tools=(ToolSpec(diameter,passes,overlap),),
@@ -54,3 +52,12 @@ def plan_geometry_job(project, *, side, diameter, target, passes, overlap, cutte
 
 def geometry_job(project, **settings):
     return plan_geometry_job(project, **settings)[0]
+
+
+def assumed_stock(outline,stock_margin):
+    """Shared nominal rectangular stock model for preview and tab editor."""
+    if outline is None or not isfinite(stock_margin) or stock_margin<=0:
+        raise ValueError("Outline and positive modeled stock margin required")
+    xs,ys=zip(*outline.exterior)
+    x0,y0,x1,y1=min(xs)-stock_margin,min(ys)-stock_margin,max(xs)+stock_margin,max(ys)+stock_margin
+    return BoardOutline("assumed rectangular stock",((x0,y0),(x1,y0),(x1,y1),(x0,y1),(x0,y0)))

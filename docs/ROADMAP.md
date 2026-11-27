@@ -14,4 +14,6 @@ See [RES-032 — upstream feature study](research/RES-032-feature-roadmap.md) fo
 - [ ] Probing, height compensation, tool change, supervised dry run.
 - [ ] First complete PWM 555 V2 fabrication and electrical verification (v0.1 candidate).
 
+UI direction: bCNC-inspired grouped toolbar/workspaces (Project, Setup, CAM, Editor, Simulation, Control, Probe, Tools), with original Qt design and hardware controls gated by machine state. Schedule after core workflows stabilize; no toolbar redesign in the current increment.
+
 All physical and release gates remain pending. See SAFETY.md.

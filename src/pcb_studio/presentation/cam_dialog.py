@@ -1,11 +1,13 @@
 """Explicit nominal geometry settings, not physical cutting parameters."""
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QFormLayout,QLabel,QComboBox,
-    QDoubleSpinBox,QSpinBox,QLineEdit,QDialogButtonBox)
+    QDoubleSpinBox,QSpinBox,QLineEdit,QDialogButtonBox,QPushButton,QHBoxLayout)
+from pcb_studio.presentation.tab_dialog import TabDialog
 
 
 class CamDialog(QDialog):
     def __init__(self,project,parent=None):
         super().__init__(parent)
+        self.project=project
         self.setWindowTitle("Plan CAM geometry (offline)")
         layout=QVBoxLayout(self)
         info=QLabel("Illustrative geometry defaults only. Select one side. "
@@ -37,7 +39,12 @@ class CamDialog(QDialog):
         self.margin=number("Assumed stock margin (mm)",3,0.001,100)
         self.anchors=QLineEdit()
         self.anchors.setPlaceholderText("x,y; x,y (optional, on original outline)")
-        form.addRow("Tab anchors (canonical XY)",self.anchors)
+        tab_row=QHBoxLayout()
+        tab_row.addWidget(self.anchors)
+        self.pick_tabs=QPushButton("Place tabs...")
+        self.pick_tabs.clicked.connect(self.open_tabs)
+        tab_row.addWidget(self.pick_tabs)
+        form.addRow("Tab anchors (canonical XY)",tab_row)
         self.width=number("Tab width (mm)",2,0.001,20)
         layout.addLayout(form)
         layout.addWidget(QLabel("No anchors = no tabs; diagnostic is retained in the preview."))
@@ -47,9 +54,22 @@ class CamDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def selection(self):
-        anchors=tuple(tuple(float(v.strip()) for v in part.split(","))
+    def read_anchors(self):
+        return tuple(tuple(float(v.strip()) for v in part.split(","))
                       for part in self.anchors.text().split(";") if part.strip())
+
+    def open_tabs(self):
+        try:
+            dialog=TabDialog(self.project,self.read_anchors(),self.width.value(),
+                             self.cutter.value(),self.margin.value(),self)
+        except ValueError as exc:
+            self.anchors.setToolTip(str(exc))
+            return
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            self.anchors.setText("; ".join(f"{x!r},{y!r}" for x,y in dialog.anchors))
+
+    def selection(self):
+        anchors=self.read_anchors()
         return dict(side=self.side.currentData(),diameter=self.diameter.value(),
                     target=self.target.value(),passes=self.passes.value(),
                     overlap=self.overlap.value()/100,cutter=self.cutter.value(),
