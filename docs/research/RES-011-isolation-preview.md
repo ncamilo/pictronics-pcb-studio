@@ -1,0 +1,11 @@
+# RES-011 — First experimental isolation contours
+
+Status: initial isolation preview passed CI. No production readiness.
+
+Source inspection: FlatCAM Evo appPlugins/ToolIsolation/IsolationGen.py at c948622f6b906f9910990d7bafbfb3012be21350, blob 0e4d89a2c1eaa88692e667dbdb90006e5d8933f3. pass_offset and v_effective_diameter embody basic geometric formulas. generate_envelope calls the application object's isolation_geometry and related helpers. Independent implementation here, no upstream source copied. Keep existing vendor notices unchanged.
+
+Preview offset = tool diameter/2 + positive clearance + pass index * diameter * (1 - overlap). Clearance defaults to 0.002 mm; explicit difference from upstream near-exact first-pass offset. V-bit uses ideal tip diameter + 2 * depth magnitude * tan(included angle/2). These are not calibrated physical tool parameters. Use Shapely polygon buffers, explicit ring directions and conservative approximate swept-tool checks against copper and board material. Reject rather than clip at board edges/cutouts. Flag merged components; this does not detect every inaccessible gap or disappearing interior. No coverage guarantee, no consideration of fixtures, runout, height errors or machine limits. Fixed approximation resolution and preliminary clearance are not machining tolerances. No feeds, depths, G-code or physical motion. No integration with machine service or GUI.
+
+Tests: formula, invalid parameters, multipass offsets, orientation, gap merge diagnostic, board boundary and internal cutout rejection, imported synthetic board. Verified: 84 research tests passed on both OS, including 19 isolation cases. Next: detect residual uncut areas, compare against original FlatCAM isolation_geometry on identical inputs, derive validated tolerances and evaluate tool selection. All six parser reference fixtures passed, including both macro transparency cases.
+
+Evidence: 602227a8097f53975639dfa8e6a209c1a0c77bb8, https://github.com/ncamilo/pictronics-pcb-studio/actions/runs/45869790841. Synthetic isolation centerline 889 vertices, 52.291402 mm on both OS. All three workflows passed, including https://github.com/ncamilo/pictronics-pcb-studio/actions/runs/45869796547.

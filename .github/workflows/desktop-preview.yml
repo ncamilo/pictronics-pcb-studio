@@ -1,0 +1,29 @@
+name: Desktop preview
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0
+      - run: python -m pip install -e ".[dev]" PySide6==6.8.3 gerbonara==1.6.3 numpy==2.2.6 shapely==2.1.2
+      - run: python -m pytest tests/test_desktop_preview.py tests/test_desktop_import.py tests/test_viewport.py tests/test_desktop_navigation.py tests/test_desktop_cam.py tests/test_nc_stage_preview.py tests/test_work_frame.py tests/test_desktop_work_frame.py tests/test_desktop_tabs.py tests/test_project_file.py tests/test_desktop_panel.py -v -s
+      - run: python research/desktop_demo.py desktop-output
+      - run: python research/import_desktop_demo.py desktop-output
+      - run: python research/project_desktop_demo.py desktop-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-preview-${{ matrix.os }}
+          path: desktop-output/
+          if-no-files-found: error

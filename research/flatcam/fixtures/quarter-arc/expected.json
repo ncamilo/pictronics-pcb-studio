@@ -1,0 +1,28 @@
+{
+  "area_mm2": 6.408849013323178,
+  "area_tolerance_mm2": 0.05,
+  "components": 1,
+  "holes": 0,
+  "bounds": [
+    -0.2,
+    -0.2,
+    10.2,
+    10.2
+  ],
+  "bounds_tolerance_mm": 0.01,
+  "drills": [
+    [
+      2,
+      2,
+      0.8
+    ],
+    [
+      18,
+      18,
+      1.2
+    ]
+  ],
+  "slots": [],
+  "symdiff_limit_mm2": 0.08,
+  "hausdorff_limit_mm": 0.02
+}

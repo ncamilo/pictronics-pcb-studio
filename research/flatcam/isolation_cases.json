@@ -1,0 +1,160 @@
+[
+  {
+    "name": "rectangle-three-passes",
+    "rectangles": [
+      [
+        5,
+        5,
+        15,
+        10
+      ]
+    ],
+    "holes": [],
+    "diameter": 0.4,
+    "passes": 3,
+    "overlap": 0.25,
+    "counts": [
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "separate-tracks",
+    "rectangles": [
+      [
+        3,
+        3,
+        7,
+        7
+      ],
+      [
+        7.8,
+        3,
+        11,
+        7
+      ]
+    ],
+    "holes": [],
+    "diameter": 0.4,
+    "passes": 1,
+    "overlap": 0.2,
+    "counts": [
+      2
+    ]
+  },
+  {
+    "name": "narrow-gap-wide",
+    "rectangles": [
+      [
+        3,
+        3,
+        7,
+        7
+      ],
+      [
+        7.2,
+        3,
+        11,
+        7
+      ]
+    ],
+    "holes": [],
+    "diameter": 0.4,
+    "passes": 1,
+    "overlap": 0.2,
+    "counts": [
+      1
+    ],
+    "probe": [
+      7.1,
+      5
+    ],
+    "probe_covered": false
+  },
+  {
+    "name": "narrow-gap-fine",
+    "rectangles": [
+      [
+        3,
+        3,
+        7,
+        7
+      ],
+      [
+        7.2,
+        3,
+        11,
+        7
+      ]
+    ],
+    "holes": [],
+    "diameter": 0.15,
+    "passes": 1,
+    "overlap": 0.2,
+    "counts": [
+      2
+    ],
+    "probe": [
+      7.1,
+      5
+    ],
+    "probe_covered": true
+  },
+  {
+    "name": "internal-ring",
+    "rectangles": [
+      [
+        3,
+        3,
+        17,
+        17
+      ]
+    ],
+    "holes": [
+      [
+        7,
+        7,
+        13,
+        13
+      ]
+    ],
+    "diameter": 0.4,
+    "passes": 2,
+    "overlap": 0.2,
+    "counts": [
+      2,
+      2
+    ]
+  },
+  {
+    "name": "disappearing-hole",
+    "rectangles": [
+      [
+        5,
+        5,
+        15,
+        15
+      ]
+    ],
+    "holes": [
+      [
+        9.9,
+        9.9,
+        10.1,
+        10.1
+      ]
+    ],
+    "diameter": 0.4,
+    "passes": 1,
+    "overlap": 0.2,
+    "counts": [
+      1
+    ],
+    "probe": [
+      10,
+      10
+    ],
+    "probe_covered": false
+  }
+]

@@ -1,0 +1,5 @@
+# RES-023 — Standalone offline G-code viewer
+
+Status: submitted for CI. Prior commit fe75807384455fdb7857800624be8caad0a181fa passed all workflows (243 research tests per OS).
+
+Render actual independently parsed and source-validated G-code preview events as SVG and a standalone HTML canvas viewer. XY and XZ orthographic centerlines, colored stages, dashed rapid moves, plunge markers, current XYZ and event slider, previous/next controls and stage/rapid filters. No external dependencies in the HTML and no machine connection. Projection represents centerlines, not copper geometry, tool footprint, material removal, fixture collision or time. SVG is a static fallback. Demo imports actual synthetic Gerber/Excellon/outline fixtures, binds illustrative tools, generates and reads back the comment-only G-code. CI uploads HTML/SVG as an artifact, tests exact data mapping, bounds, XML, JSON, controls and rejection of tampering. JavaScript syntax checked with Node; browser interaction still requires manual validation. Not integrated into desktop GUI; no hardware or main changes. No executable G-code. Next: desktop integration, larger real board and performance profiling.

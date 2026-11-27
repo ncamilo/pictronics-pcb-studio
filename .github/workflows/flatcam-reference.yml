@@ -1,0 +1,105 @@
+name: FlatCAM reference
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'research/flatcam/**'
+      - '.github/workflows/flatcam-reference.yml'
+      - 'examples/synthetic_board/**'
+      - 'src/pcb_studio/**'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'research/flatcam/**'
+      - '.github/workflows/flatcam-reference.yml'
+      - 'examples/synthetic_board/**'
+      - 'src/pcb_studio/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: MariusAdrian88/FlatCAM_Evo
+          ref: c948622f6b906f9910990d7bafbfb3012be21350
+          path: upstream-flatcam
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Prepare independent FlatCAM environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdal-dev gdal-bin libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
+          python -m venv "$RUNNER_TEMP/flatcam-env"
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pip install --upgrade pip setuptools wheel
+          grep -vi '^gdal$' upstream-flatcam/requirements.txt > "$RUNNER_TEMP/flatcam-requirements.txt"
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pip install -r "$RUNNER_TEMP/flatcam-requirements.txt"
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pip install "GDAL==$(gdal-config --version)"
+      - name: Export reference with upstream parser
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          cp research/flatcam/export_reference.py upstream-flatcam/tests/test_pcb_studio_reference.py
+          cd upstream-flatcam
+          status=0
+          for fixture in "$GITHUB_WORKSPACE/examples/synthetic_board" "$GITHUB_WORKSPACE"/research/flatcam/fixtures/*/; do
+            name=$(basename "$fixture")
+            PCB_REFERENCE_FIXTURE="$fixture" PCB_REFERENCE_RESULT="$RUNNER_TEMP/reference-$name.json" \
+              "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_reference.py -v -s || status=1
+          done
+          exit "$status"
+      - name: Compare using isolated PCB Studio environment
+        run: |
+          python -m venv "$RUNNER_TEMP/studio-env"
+          "$RUNNER_TEMP/studio-env/bin/python" -m pip install -e . gerbonara==1.6.3 numpy==2.2.6 shapely==2.1.2
+          status=0
+          for fixture in examples/synthetic_board research/flatcam/fixtures/*/; do
+            name=$(basename "$fixture")
+            "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_reference.py "$fixture" "$RUNNER_TEMP/reference-$name.json" || status=1
+          done
+          exit "$status"
+      - name: Export original FlatCAM isolation contours
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCB_ISOLATION_CASES: ${{ github.workspace }}/research/flatcam/isolation_cases.json
+          PCB_ISOLATION_RESULT: ${{ runner.temp }}/isolation-reference.json
+        run: |
+          cp research/flatcam/export_isolation_reference.py upstream-flatcam/tests/test_pcb_studio_isolation_reference.py
+          cd upstream-flatcam
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_isolation_reference.py -v -s
+      - name: Compare isolation geometry
+        run: |
+          "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_isolation_reference.py research/flatcam/isolation_cases.json "$RUNNER_TEMP/isolation-reference.json"
+      - name: Export original FlatCAM drilling groups
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCB_DRILL_CASES: ${{ github.workspace }}/research/flatcam/drilling_cases.json
+          PCB_DRILL_RESULT: ${{ runner.temp }}/drilling-reference.json
+        run: |
+          cp research/flatcam/export_drilling_reference.py upstream-flatcam/tests/test_pcb_studio_drilling_reference.py
+          cd upstream-flatcam
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_drilling_reference.py -v -s
+      - name: Compare drilling groups
+        run: |
+          "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_drilling_reference.py research/flatcam/drilling_cases.json "$RUNNER_TEMP/drilling-reference.json"
+      - name: Export original FlatCAM cutout paths
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCB_CUTOUT_CASES: ${{ github.workspace }}/research/flatcam/cutout_cases.json
+          PCB_CUTOUT_RESULT: ${{ runner.temp }}/cutout-reference.json
+        run: |
+          cp research/flatcam/export_cutout_reference.py upstream-flatcam/tests/test_pcb_studio_cutout_reference.py
+          cd upstream-flatcam
+          "$RUNNER_TEMP/flatcam-env/bin/python" -m pytest tests/test_pcb_studio_cutout_reference.py -v -s
+      - name: Compare cutout paths and tabs
+        run: |
+          "$RUNNER_TEMP/studio-env/bin/python" research/flatcam/compare_cutout_reference.py research/flatcam/cutout_cases.json "$RUNNER_TEMP/cutout-reference.json"

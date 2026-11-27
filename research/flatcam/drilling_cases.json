@@ -1,0 +1,94 @@
+{
+  "tools": [
+    {
+      "id": 1,
+      "diameter": 0.8,
+      "plated": true,
+      "drills": [
+        [
+          5,
+          5
+        ],
+        [
+          10,
+          5
+        ]
+      ],
+      "slots": []
+    },
+    {
+      "id": 2,
+      "diameter": 1.2,
+      "plated": true,
+      "drills": [
+        [
+          15,
+          5
+        ]
+      ],
+      "slots": []
+    },
+    {
+      "id": 3,
+      "diameter": 0.8,
+      "plated": false,
+      "drills": [
+        [
+          5,
+          5
+        ],
+        [
+          20,
+          5
+        ]
+      ],
+      "slots": [
+        [
+          [
+            5,
+            10
+          ],
+          [
+            10,
+            10
+          ]
+        ]
+      ]
+    },
+    {
+      "id": 4,
+      "diameter": 0.8001,
+      "plated": null,
+      "drills": [
+        [
+          25,
+          5
+        ]
+      ],
+      "slots": []
+    }
+  ],
+  "expected": [
+    [
+      "drill",
+      0.8,
+      4
+    ],
+    [
+      "drill",
+      0.8001,
+      1
+    ],
+    [
+      "drill",
+      1.2,
+      1
+    ],
+    [
+      "mill_slot",
+      0.8,
+      1
+    ]
+  ],
+  "expected_conflict_diameter": 0.8
+}

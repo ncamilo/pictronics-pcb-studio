@@ -1,8 +1,19 @@
 # Roadmap
-- [x] v0.0.1: estrutura, contratos iniciais, simulador mínimo, testes e CI.
-- [ ] v0.0.2: inventário upstream por commit, auditoria de licença, fixtures Gerber/Excellon.
-- [ ] v0.0.3: importação de geometria e visualizador 2D.
-- [ ] v0.0.4: isolamento, furação, recorte e comparação com FlatCAM.
-- [ ] v0.0.5: protocolo GRBL, transporte simulado e streaming testado.
-- [ ] v0.0.6: testes sem corte, probing e compensação.
-- [ ] v0.1.0: fluxo integral e fabricação validada da placa PWM 555 V2.
+
+Current baseline: offline desktop import, CAM preview, NC preview export and explicit work XY frame. Real PWM 555 V2 files imported and NC opened in bCNC; physical execution is not enabled.
+
+See [RES-032 — upstream feature study](research/RES-032-feature-roadmap.md) for source-level comparison, acceptance gates and proposed priorities.
+
+- [x] Initial structure, contracts, simulator and CI.
+- [x] Research snapshots, synthetic fixtures, selected FlatCAM reference comparisons.
+- [x] Experimental Gerber/Excellon import, native geometry preview, isolation/drill/cutout, tool and XYZ models, NC readback and offline export.
+- [ ] Graphical tabs, versioned project persistence, work-frame preview and physical double-side registration.
+- [ ] Physical tool/recipe UI, CAM quality and conservative path optimization.
+- [ ] Offline CNC preflight, modal interpretation, controller-specific export and simulation.
+- [ ] Identify firmware, fake transport, read-only GRBL telemetry, explicit manual controls and tested streaming.
+- [ ] Probing, height compensation, tool change, supervised dry run.
+- [ ] First complete PWM 555 V2 fabrication and electrical verification (v0.1 candidate).
+
+UI direction: bCNC-inspired grouped toolbar/workspaces (Project, Setup, CAM, Editor, Simulation, Control, Probe, Tools), with original Qt design and hardware controls gated by machine state. Schedule after core workflows stabilize; no toolbar redesign in the current increment.
+
+All physical and release gates remain pending. See SAFETY.md.

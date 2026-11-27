@@ -26,3 +26,15 @@ def test_polygon_retains_holes():
     ring = ((0, 0), (10, 0), (10, 10), (0, 0))
     hole = ((1, 1), (2, 1), (2, 2), (1, 1))
     assert CopperPolygon(ring, (hole,)).holes == (hole,)
+
+
+def test_outline_retains_internal_loops():
+    outer = ((0, 0), (10, 0), (10, 10), (0, 10), (0, 0))
+    hole = ((1, 1), (2, 1), (2, 2), (1, 2), (1, 1))
+    assert BoardOutline("outline", outer, (hole,)).holes == (hole,)
+
+
+def test_outline_rejects_open_internal_loop():
+    outer = ((0, 0), (10, 0), (10, 10), (0, 10), (0, 0))
+    with pytest.raises(ValueError):
+        BoardOutline("outline", outer, (((1, 1), (2, 1), (2, 2)),))
