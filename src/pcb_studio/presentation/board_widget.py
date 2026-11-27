@@ -231,6 +231,13 @@ class BoardWidget(QWidget):
                         for xy in path[1:]:
                             paths.lineTo(point(xy))
                 p.drawPath(paths)
+                if stage["operation"]=="cutout_external":
+                    p.setPen(QPen(QColor("#f1b66e"),3,Qt.PenStyle.DashLine))
+                    for gap in self.cam["tab_gaps"]:
+                        path=QPainterPath(point(gap[0]))
+                        for xy in gap[1:]:
+                            path.lineTo(point(xy))
+                        p.drawPath(path)
         origin=point(self.work_frame.origin)
         sx,sy=self.work_frame.signs
         p.setPen(QPen(QColor("#56e0b2"),2))

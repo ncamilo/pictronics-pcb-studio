@@ -1,7 +1,6 @@
 """Explicit nominal geometry settings, not physical cutting parameters."""
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QFormLayout,QLabel,QComboBox,
     QDoubleSpinBox,QSpinBox,QLineEdit,QDialogButtonBox,QPushButton,QHBoxLayout)
-from pcb_studio.presentation.tab_dialog import TabDialog
 
 
 class CamDialog(QDialog):
@@ -47,7 +46,9 @@ class CamDialog(QDialog):
         form.addRow("Tab anchors (canonical XY)",tab_row)
         self.width=number("Tab width (mm)",2,0.001,20)
         layout.addLayout(form)
-        layout.addWidget(QLabel("No anchors = no tabs; diagnostic is retained in the preview."))
+        self.tab_status=QLabel("No anchors = no tabs; diagnostic is retained in the preview.")
+        self.tab_status.setWordWrap(True)
+        layout.addWidget(self.tab_status)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Generate preview")
         buttons.accepted.connect(self.accept)
@@ -60,13 +61,15 @@ class CamDialog(QDialog):
 
     def open_tabs(self):
         try:
+            from pcb_studio.presentation.tab_dialog import TabDialog
             dialog=TabDialog(self.project,self.read_anchors(),self.width.value(),
                              self.cutter.value(),self.margin.value(),self)
-        except ValueError as exc:
-            self.anchors.setToolTip(str(exc))
+        except (ValueError,ImportError) as exc:
+            self.tab_status.setText(f"Tab editor unavailable: {exc}")
             return
         if dialog.exec()==QDialog.DialogCode.Accepted:
             self.anchors.setText("; ".join(f"{x!r},{y!r}" for x,y in dialog.anchors))
+            self.tab_status.setText(f"{len(dialog.anchors)} tabs selected; generate CAM to apply.")
 
     def selection(self):
         anchors=self.read_anchors()

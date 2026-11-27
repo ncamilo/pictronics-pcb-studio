@@ -9,7 +9,6 @@ from pcb_studio.presentation.cam_dialog import CamDialog
 from pcb_studio.infrastructure.cam.tab_layout import snap_exterior,preview_tabs,preset_anchors
 from test_desktop_preview import app,window
 from test_desktop_import import load
-from test_desktop_cam import SETTINGS
 
 
 @pytest.fixture
@@ -59,7 +58,7 @@ def test_rejected_changes_keep_last_valid(editor):
     assert editor.anchors==old
 
 
-def test_selection_into_cam(window,editor,tmp_path):
+def test_selection_into_cam(window,editor):
     assert editor.apply_preset("four")
     dialog=CamDialog(window.project)
     dialog.anchors.setText("; ".join(f"{x!r},{y!r}" for x,y in editor.anchors))
@@ -68,3 +67,21 @@ def test_selection_into_cam(window,editor,tmp_path):
     assert len(window.cam_geometry["tab_gaps"])==4
     assert not any(d["code"]=="no_external_tabs" for d in window.cam_geometry["diagnostics"])
     dialog.close()
+
+def test_picker_accept_cancel(window,monkeypatch):
+    assert load(window)
+    d=CamDialog(window.project)
+    def accept_four(self):
+        assert self.apply_preset("four")
+        return self.DialogCode.Accepted
+    monkeypatch.setattr(TabDialog,"exec",accept_four)
+    d.pick_tabs.click()
+    assert len(d.read_anchors())==4
+    old=d.anchors.text()
+    def cancel_clear(self):
+        assert self.try_layout(())
+        return self.DialogCode.Rejected
+    monkeypatch.setattr(TabDialog,"exec",cancel_clear)
+    d.pick_tabs.click()
+    assert d.anchors.text()==old
+    d.close()
