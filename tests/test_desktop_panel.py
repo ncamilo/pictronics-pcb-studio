@@ -75,7 +75,7 @@ def test_pick_zero_and_presets(window,app):
     window.pick_zero.click()
     pixel=window.board.screen_at((5,10)).toPoint()
     xy=window.board.world_at(pixel)
-    QTest.mouseClick(window.board,Qt.MouseButton.LeftButton,pos=pixel)
+    QTest.mouseClick(window.board,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.ShiftModifier,pos=pixel)
     assert window.work_frame.origin==pytest.approx(xy)
     assert window.work_frame.to_work(xy)==pytest.approx((0,0))
     assert not window.pick_zero.isChecked()

@@ -57,3 +57,54 @@ def test_dialog_and_gui_export(window,tmp_path,app):
     assert load(window)
     assert window.work_frame==WorkFrame()
     dialog.close()
+
+
+@pytest.mark.parametrize("mirror",["none","x","y"])
+def test_view_and_json_same_as_nc(window,tmp_path,mirror):
+    assert load(window)
+    assert window.generate_cam(**SETTINGS)
+    frame=WorkFrame((30,20),mirror)
+    window.set_work_frame(frame)
+    board=window.board
+    assert board.work_at(board.screen_at(frame.origin))==pytest.approx((0,0),abs=1e-10)
+    p=(5,10)
+    assert board.work_at(board.screen_at(p))==pytest.approx(frame.to_work(p))
+    assert board.world_at(board.screen_at(p))==pytest.approx(p)
+    # Display axes are fixed in work coordinates even when mirrored.
+    assert board.screen_at(frame.to_board((1,0))).x()>board.screen_at(frame.origin).x()
+    assert board.screen_at(frame.to_board((0,1))).y()<board.screen_at(frame.origin).y()
+    dest=tmp_path/"work.cam.json"
+    window.write_cam_json(dest)
+    data=json.loads(dest.read_text())
+    assert data["schema_version"]==2
+    assert data["coordinate_system"]=="work XY"
+    assert data["work_frame"]=={"origin":[30,20],"mirror":mirror}
+    for before,after in zip(window.cam_geometry["stages"],data["stages"]):
+        for a,b in zip(before["paths"],after["paths"]):
+            assert all(q==pytest.approx(frame.to_work(p)) for p,q in zip(a,b))
+    assert data["stock_bounds"]==pytest.approx(frame.bounds(window.cam_geometry["stock_bounds"]))
+    folder=window.write_nc_previews(tmp_path,SETUP,PARAMS)
+    assert folder is not None,window.message.text()
+    files=sorted(folder.glob("*.nc"))
+    for stage,path in zip(data["stages"],files):
+        moves=xy_words(path.read_text())
+        for line in stage["paths"]:
+            assert any(q==pytest.approx(line[0],abs=1e-6) for q in moves)
+
+
+def test_snap_exact_corner_and_cancel(window,app):
+    from PySide6.QtCore import Qt,QPoint
+    from PySide6.QtTest import QTest
+    assert load(window)
+    app.processEvents()
+    window.pick_zero.click()
+    pixel=window.board.screen_at((30,20)).toPoint()+QPoint(-3,3)
+    QTest.mouseClick(window.board,Qt.MouseButton.LeftButton,pos=pixel)
+    assert window.work_frame.origin==(30,20)
+    assert not window.pick_zero.isChecked()
+    assert window.board.work_at(window.board.screen_at((30,20)))==pytest.approx((0,0))
+    old=window.work_frame
+    window.pick_zero.click()
+    QTest.mouseClick(window.board,Qt.MouseButton.RightButton,pos=pixel)
+    assert not window.pick_zero.isChecked()
+    assert window.work_frame==old

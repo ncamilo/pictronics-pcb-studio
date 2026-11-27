@@ -38,3 +38,18 @@ def corner_frame(bounds,mirror="none"):
     xmin,ymin,xmax,ymax=bounds
     return WorkFrame((xmax if mirror=="x" else xmin,
                       ymax if mirror=="y" else ymin),mirror)
+
+
+def reference_points(bounds):
+    """Exact bounding-box corners and center, in the source frame."""
+    a,b,c,d=bounds
+    return ((a,b),(a,d),(c,b),(c,d),((a+c)/2,(b+d)/2))
+
+
+def snap_reference(xy, candidates, tolerance):
+    from math import dist
+    if not isfinite(tolerance) or tolerance<=0:
+        raise ValueError("Invalid snap tolerance")
+    # Preserve the exact candidate, not a rounded mouse position.
+    nearest=min(candidates,key=lambda p:dist(p,xy),default=None)
+    return nearest if nearest is not None and dist(nearest,xy)<=tolerance else xy

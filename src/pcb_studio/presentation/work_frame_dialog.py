@@ -11,9 +11,9 @@ class WorkFrameDialog(QDialog):
         self.board_bounds=board_bounds
         self.stock_bounds=stock_bounds
         layout=QVBoxLayout(self)
-        note=QLabel("Origin is a point in original Gerber XY. Mirror X reverses X; "
+        note=QLabel("Presets use exact geometry. Custom values are points in original Gerber XY. Mirror X reverses X; "
                     "Mirror Y reverses Y. Reflection is through the origin, not an "
-                    "automatic board flip. It reverses path direction. Physical registration is not verified.")
+                    "automatic board flip. It reverses path direction. All visible geometry and exports use work coordinates. Physical registration is not verified.")
         note.setWordWrap(True)
         layout.addWidget(note)
         form=QFormLayout()

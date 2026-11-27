@@ -1,8 +1,8 @@
-"""Read-only native Qt layer rendering in canonical XY."""
+"""Render immutable source geometry in a shared work XY frame."""
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
-from pcb_studio.domain.work_frame import WorkFrame
+from pcb_studio.domain.work_frame import WorkFrame, reference_points, snap_reference
 from pcb_studio.domain.pcb import outline_boards
 from pcb_studio.presentation.viewport import Viewport, grid_values, measure
 
@@ -10,6 +10,7 @@ from pcb_studio.presentation.viewport import Viewport, grid_values, measure
 class BoardWidget(QWidget):
     cursor_changed = Signal(str)
     origin_picked = Signal(object)
+    origin_cancelled = Signal()
     measurement_changed = Signal(str)
     def __init__(self):
         super().__init__()
@@ -18,6 +19,8 @@ class BoardWidget(QWidget):
         self.work_frame = WorkFrame()
         self.hidden_layers = set()
         self.viewport = None
+        self.source_bounds = None
+        self.snap_preview = None
         self.show_grid = True
         self.measuring = False
         self.picking_origin = False
@@ -35,31 +38,71 @@ class BoardWidget(QWidget):
         self.picking_origin=False
         self.unsetCursor()
         self._drag=None
-        self.viewport=self._build_viewport(project)
+        self.work_frame=WorkFrame()
+        self.snap_preview=None
+        source=self._build_viewport(project)
+        self.source_bounds=source.bounds if source else None
+        self.reframe()
         self.cursor_changed.emit("Cursor: —")
         self.measurement_changed.emit("Measurement: —")
         self.update()
 
     def set_work_frame(self,frame):
         self.work_frame=frame
+        self.snap_preview=None
+        self.reframe()
+        if len(self.measure_points)==2:
+            self.report_measurement()
         self.cursor_changed.emit("Work X —  Y —")
         self.update()
 
+    def reframe(self):
+        if self.source_bounds is None:
+            self.viewport=None
+            return
+        a,b,c,d=self.work_frame.bounds(self.source_bounds)
+        # Keep work zero visible on Fit, even outside the material.
+        a,b,c,d=min(a,0),min(b,0),max(c,0),max(d,0)
+        pad=max(c-a,d-b,1)*0.06
+        self.viewport=Viewport((a-pad,b-pad,c+pad,d+pad))
+
     def set_pick_origin(self,checked):
         self.picking_origin=checked
+        self.snap_preview=None
+        self.update()
         if checked:
             self.setCursor(Qt.CursorShape.CrossCursor)
         else:
             self.unsetCursor()
 
     def cursor_label(self,pixel):
+        return "Work X %.3f  Y %.3f mm" % self.work_at(pixel)
+
+    def work_at(self,pixel):
+        return self.viewport.world((pixel.x(),pixel.y()),self.plot_rect())
+
+    def origin_candidate(self,pixel,free=False):
         xy=self.world_at(pixel)
-        return "Work X %.3f  Y %.3f mm" % self.work_frame.to_work(xy)
+        if free:
+            return xy
+        candidates=[]
+        for board in outline_boards(self.project.outline):
+            xs,ys=zip(*board.exterior)
+            candidates.extend(reference_points((min(xs),min(ys),max(xs),max(ys))))
+        boards=outline_boards(self.project.outline)
+        if boards:
+            xs,ys=zip(*(xy for board in boards for xy in board.exterior))
+            candidates.extend(reference_points((min(xs),min(ys),max(xs),max(ys))))
+        if self.cam:
+            candidates.extend(reference_points(self.cam["stock_bounds"]))
+        # Object references have priority, as in FlatCAM; free click otherwise.
+        return snap_reference(xy,candidates,10/self.viewport.scale(self.plot_rect()))
 
     def set_cam(self,data):
         self.cam=data
         self.hidden_layers={key for key in self.hidden_layers if key[0]!='cam'}
-        self.viewport=Viewport(tuple(data['stock_bounds']))
+        self.source_bounds=tuple(data['stock_bounds'])
+        self.reframe()
         self.update()
 
     @staticmethod
@@ -84,10 +127,10 @@ class BoardWidget(QWidget):
         return (r.x(),r.y(),r.width(),r.height())
 
     def world_at(self,pixel):
-        return self.viewport.world((pixel.x(),pixel.y()),self.plot_rect())
+        return self.work_frame.to_board(self.work_at(pixel))
 
     def screen_at(self,xy):
-        return QPointF(*self.viewport.screen(xy,self.plot_rect()))
+        return QPointF(*self.viewport.screen(self.work_frame.to_work(xy),self.plot_rect()))
 
     def fit_view(self):
         if self.viewport:
@@ -111,11 +154,14 @@ class BoardWidget(QWidget):
             self.measure_points.clear()
         self.measure_points.append(xy)
         if len(self.measure_points)==2:
-            dx,dy,d=measure(*self.measure_points)
-            self.measurement_changed.emit(f"Distance {d:.3f} mm | dX {dx:.3f} | dY {dy:.3f}")
+            self.report_measurement()
         else:
             self.measurement_changed.emit("Select second point")
         self.update()
+
+    def report_measurement(self):
+        dx,dy,d=measure(*(self.work_frame.to_work(p) for p in self.measure_points))
+        self.measurement_changed.emit(f"Distance {d:.3f} mm | dX {dx:.3f} | dY {dy:.3f}")
 
     def wheelEvent(self,event):
         if self.viewport and event.angleDelta().y():
@@ -135,8 +181,12 @@ class BoardWidget(QWidget):
             event.accept()
         elif self.viewport and self.picking_origin and event.button()==Qt.MouseButton.LeftButton:
             if QRectF(*self.plot_rect()).contains(event.position()):
-                self.origin_picked.emit(self.world_at(event.position()))
-                self.cursor_changed.emit(self.cursor_label(event.position()))
+                xy=self.origin_candidate(event.position(),bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
+                self.origin_picked.emit(xy)
+                self.cursor_changed.emit("Work X 0.000  Y 0.000 mm")
+            event.accept()
+        elif self.picking_origin and event.button()==Qt.MouseButton.RightButton:
+            self.origin_cancelled.emit()
             event.accept()
         elif self.viewport and self.measuring and event.button()==Qt.MouseButton.LeftButton:
             self.measure_at(self.world_at(event.position()))
@@ -152,17 +202,22 @@ class BoardWidget(QWidget):
             self.viewport.translate(delta.x(),delta.y())
             self._drag=event.position()
             self.update()
+        if self.picking_origin:
+            self.snap_preview=self.origin_candidate(event.position(),bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
+            self.update()
         self.cursor_changed.emit(self.cursor_label(event.position()))
 
     def mouseReleaseEvent(self,event):
         if event.button()==Qt.MouseButton.MiddleButton:
             self._drag=None
-            self.unsetCursor()
+            self.setCursor(Qt.CursorShape.CrossCursor) if self.picking_origin else self.unsetCursor()
             event.accept()
         else:
             super().mouseReleaseEvent(event)
 
     def leaveEvent(self,event):
+        self.snap_preview=None
+        self.update()
         self.cursor_changed.emit("Cursor: —")
         super().leaveEvent(event)
 
@@ -176,7 +231,7 @@ class BoardWidget(QWidget):
             return
         if not self.viewport:
             return
-        xmin,ymin,xmax,ymax=self.viewport.bounds
+        xmin,ymin,xmax,ymax=self.work_frame.bounds(self.source_bounds)
         scale=self.viewport.scale(self.plot_rect())
         point=self.screen_at
         p.save()
@@ -184,7 +239,7 @@ class BoardWidget(QWidget):
         p.setClipRect(plot)
         if self.show_grid:
             step=self.viewport.grid_step(self.plot_rect())
-            corners=[self.work_frame.to_work(self.world_at(pt))
+            corners=[self.work_at(pt)
                      for pt in (plot.bottomLeft(),plot.topRight())]
             lo=tuple(min(a,b) for a,b in zip(*corners))
             hi=tuple(max(a,b) for a,b in zip(*corners))
@@ -265,9 +320,18 @@ class BoardWidget(QWidget):
                 p.drawEllipse(center,6,6)
                 p.drawText(center+QPointF(8,-8),f"T{i}")
         origin=point(self.work_frame.origin)
-        sx,sy=self.work_frame.signs
+        sx,sy=1,1
         p.setPen(QPen(QColor("#56e0b2"),2))
         p.setBrush(Qt.BrushStyle.NoBrush)
+        # Axes in the work frame are always +X right, +Y up, even mirrored.
+        lo=self.work_at(plot.bottomLeft())
+        hi=self.work_at(plot.topRight())
+        p.setPen(QPen(QColor("#56e0b2"),1,Qt.PenStyle.DashLine))
+        if lo[0]<=0<=hi[0]:
+            p.drawLine(QPointF(origin.x(),plot.top()),QPointF(origin.x(),plot.bottom()))
+        if lo[1]<=0<=hi[1]:
+            p.drawLine(QPointF(plot.left(),origin.y()),QPointF(plot.right(),origin.y()))
+        p.setPen(QPen(QColor("#56e0b2"),2))
         p.drawEllipse(origin,5,5)
         p.drawLine(origin,origin+QPointF(30*sx,0))
         p.drawLine(origin,origin+QPointF(0,-30*sy))
@@ -283,9 +347,23 @@ class BoardWidget(QWidget):
             p.drawLine(point(a),point(b))
             dx,dy,d=measure(a,b)
             p.drawText((point(a)+point(b))/2+QPointF(5,-8),f"{d:.3f} mm")
+        if self.picking_origin and self.snap_preview is not None:
+            target=point(self.snap_preview)
+            p.setPen(QPen(QColor("#69b9ff"),2))
+            p.drawEllipse(target,7,7)
+            p.drawLine(target+QPointF(-10,0),target+QPointF(10,0))
+            p.drawLine(target+QPointF(0,-10),target+QPointF(0,10))
         p.restore()
         p.setPen(QColor("#a8bacc"))
-        p.drawText(QPointF(20,25),"XY / CAM centerlines — source view, work axes shown" if self.cam else "XY / Imported geometry — source view, work axes shown")
+        if self.show_grid:
+            step=self.viewport.grid_step(self.plot_rect())
+            for x in grid_values(lo[0],hi[0],step):
+                px=self.viewport.screen((x,0),self.plot_rect())[0]
+                p.drawText(QPointF(px+2,plot.bottom()+13),f"{x:g}")
+            for y in grid_values(lo[1],hi[1],step):
+                py=self.viewport.screen((0,y),self.plot_rect())[1]
+                p.drawText(QPointF(plot.left()+3,py-3),f"{y:g}")
+        p.drawText(QPointF(20,25),"XY / CAM centerlines — work coordinates" if self.cam else "XY / Imported geometry — work coordinates")
         grid=f" | Work grid {self.viewport.grid_step(self.plot_rect()):g} mm" if self.show_grid else ""
         p.drawText(QPointF(20,self.height()-14),
-                   f"View extent: {xmax-xmin:.3f} x {ymax-ymin:.3f} mm{grid} | Zoom {self.viewport.zoom:.2f}x")
+                   f"Work bounds: X [{xmin:.3f}, {xmax:.3f}] Y [{ymin:.3f}, {ymax:.3f}] mm{grid}")

@@ -123,6 +123,8 @@ class StudioWindow(QWidget):
         self.pick_zero.setCheckable(True)
         self.pick_zero.toggled.connect(self.board.set_pick_origin)
         self.board.origin_picked.connect(self.pick_work_origin)
+        self.board.origin_cancelled.connect(lambda:self.pick_zero.setChecked(False))
+        self.pick_zero.setToolTip('Click near a board or stock corner/center to snap; Shift+click for free selection; right click cancels')
         self.work_label=QLabel("Work XY: original")
         self.work_label.setWordWrap(True)
         right.insertWidget(3,self.work_label)
@@ -278,7 +280,7 @@ class StudioWindow(QWidget):
     def pick_work_origin(self,xy):
         self.set_work_frame(WorkFrame(tuple(xy),self.work_frame.mirror))
         self.pick_zero.setChecked(False)
-        self.message.setText("Selected point is work X0 Y0 | Re-export NC after origin change")
+        self.message.setText("Selected point is work X0 Y0 | View refitted | Re-export JSON and NC")
 
     def open_work_frame(self):
         if self.project is None or self.project.outline is None:
@@ -287,7 +289,7 @@ class StudioWindow(QWidget):
         dialog=WorkFrameDialog(self.outline_bounds(),stock,self.work_frame,self)
         if dialog.exec()==QDialog.DialogCode.Accepted:
             self.set_work_frame(dialog.selection())
-            self.message.setText("Work XY updated | Grid and cursor relative to zero | Re-export NC")
+            self.message.setText("Work XY updated | View refitted | Re-export JSON and NC")
 
     def open_cam(self):
         if self.project is None or self.project.outline is None:
@@ -365,7 +367,8 @@ class StudioWindow(QWidget):
             raise ValueError("No CAM preview")
         if not str(path).lower().endswith(".cam.json"):
             raise ValueError("Use .cam.json for offline geometry")
-        Path(path).write_text(json.dumps(self.cam_geometry,indent=2,allow_nan=False)+"\n",encoding="utf-8")
+        from pcb_studio.infrastructure.cam.work_geometry import work_geometry
+        Path(path).write_text(json.dumps(work_geometry(self.cam_geometry,self.work_frame),indent=2,allow_nan=False)+"\n",encoding="utf-8")
 
     def export_cam(self):
         if self.cam_geometry is None:
