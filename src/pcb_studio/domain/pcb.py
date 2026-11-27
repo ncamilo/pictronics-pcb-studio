@@ -87,11 +87,32 @@ class BoardOutline:
 
 
 @dataclass(frozen=True)
+class PanelOutline:
+    """Disconnected board exteriors; read-only until panel CAM is implemented."""
+    source: str
+    boards: tuple[BoardOutline, ...]
+
+    def __post_init__(self):
+        if len(self.boards) < 2 or any(not isinstance(b, BoardOutline) for b in self.boards):
+            raise ValueError("Panel requires at least two board outlines")
+
+
+def outline_boards(outline):
+    if outline is None:
+        return ()
+    if isinstance(outline, PanelOutline):
+        return outline.boards
+    if isinstance(outline, BoardOutline):
+        return (outline,)
+    raise ValueError("Unknown outline type")
+
+
+@dataclass(frozen=True)
 class PCBProject:
     name: str
     copper: tuple[CopperLayer, ...]
     drills: tuple[DrillLayer, ...] = ()
-    outline: BoardOutline | None = None
+    outline: BoardOutline | PanelOutline | None = None
     # Preview only until full parser coverage and CAM validation are implemented.
     @property
     def manufacturing_ready(self) -> bool:

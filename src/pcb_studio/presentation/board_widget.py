@@ -3,6 +3,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 from pcb_studio.domain.work_frame import WorkFrame
+from pcb_studio.domain.pcb import outline_boards
 from pcb_studio.presentation.viewport import Viewport, grid_values, measure
 
 
@@ -52,8 +53,8 @@ class BoardWidget(QWidget):
     @staticmethod
     def _build_viewport(project):
         points = [xy for layer in project.copper for poly in layer.polygons for xy in poly.exterior]
-        if project.outline:
-            points.extend(project.outline.exterior)
+        for board in outline_boards(project.outline):
+            points.extend(board.exterior)
         for layer in project.drills:
             for feature in (*layer.drills, *layer.slots):
                 r = feature.diameter_mm / 2
@@ -190,10 +191,11 @@ class BoardWidget(QWidget):
             return path
 
         if project.outline and ("outline",0) not in self.hidden_layers:
-            outline=shape((project.outline.exterior,*project.outline.holes))
-            p.fillPath(outline,QColor("#304c43"))
-            p.setPen(QPen(QColor("#9ab7a5"),1.5))
-            p.drawPath(outline)
+            for board in outline_boards(project.outline):
+                outline=shape((board.exterior,*board.holes))
+                p.fillPath(outline,QColor("#304c43"))
+                p.setPen(QPen(QColor("#9ab7a5"),1.5))
+                p.drawPath(outline)
         for i,layer in enumerate(project.copper):
             if ("copper",i) in self.hidden_layers:
                 continue

@@ -11,7 +11,7 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import linemerge
 
 from pcb_studio.domain.pcb import (
-    BoardOutline, CopperLayer, CopperPolygon, Drill, DrillLayer, Slot,
+    BoardOutline, PanelOutline, CopperLayer, CopperPolygon, Drill, DrillLayer, Slot,
 )
 from pcb_studio.ports.pcb_import import PCBImportError
 from pcb_studio.infrastructure.cam.copper_composition import compose_copper
@@ -175,6 +175,9 @@ def _ring(coords):
 class GerbonaraImporter:
     """Import an explicit, limited subset without mirroring or recentering."""
 
+    def __init__(self, *, allow_panel=False):
+        self.allow_panel = allow_panel
+
     def copper(self, path, side):
         layer = _load(GerberFile, path)
         try:
@@ -232,7 +235,7 @@ class GerbonaraImporter:
         return DrillLayer(str(path), tuple(drills), tuple(slots))
 
     def outline(self, path):
-        """One board exterior with optional strictly internal, disjoint cutouts."""
+        """Parse closed profiles; multiple exteriors require explicit panel mode."""
         layer = _load(GerberFile, path)
         try:
             segments = []
@@ -264,20 +267,46 @@ class GerbonaraImporter:
             polygons = [Polygon(loop.coords) for loop in loops]
             if any(not p.is_valid or p.area <= 0 for p in polygons):
                 raise PCBImportError("Invalid outline loop")
-            polygons.sort(key=lambda p: p.area, reverse=True)
-            outer, *holes = polygons
-            # No touching, intersecting, disjoint board islands or nested cutouts.
-            if any(not outer.contains(h) or not outer.boundary.disjoint(h.boundary) for h in holes):
-                raise PCBImportError("Cutouts must lie strictly inside one board exterior")
-            for i, hole in enumerate(holes):
-                if any(not hole.disjoint(other) for other in holes[:i]):
-                    raise PCBImportError("Cutouts must be disjoint and not nested")
-            board = Polygon(outer.exterior.coords, [h.exterior.coords for h in holes])
-            if not board.is_valid or board.area <= 0:
-                raise PCBImportError("Invalid board material polygon")
-            return BoardOutline(str(path), _ring(board.exterior.coords),
-                                tuple(_ring(h.coords) for h in board.interiors))
+            return _classify_outlines(polygons, str(path), allow_panel=self.allow_panel)
         except PCBImportError:
             raise
         except (ValueError, TypeError, GEOSException) as exc:
             raise PCBImportError(str(exc)) from exc
+
+
+def _classify_outlines(polygons, source, *, allow_panel=False):
+    """Classify containment, never turn a disconnected exterior into a hole.
+
+    Strictly disjoint or strictly contained loops only; reject crossing,
+    touching, duplicate and nested-hole/island cases. Preserve coordinates.
+    """
+    parents = []
+    for i, polygon in enumerate(polygons):
+        containers = []
+        for j, other in enumerate(polygons):
+            if i == j or polygon.disjoint(other):
+                continue
+            if not polygon.boundary.disjoint(other.boundary):
+                raise PCBImportError("Outline loops must not touch or intersect")
+            if other.contains(polygon):
+                containers.append(j)
+            elif not polygon.contains(other):
+                raise PCBImportError("Outline loops overlap")
+        if len(containers) > 1:
+            raise PCBImportError("Nested cutouts or islands are unsupported")
+        parents.append(containers[0] if containers else None)
+    roots = [i for i, parent in enumerate(parents) if parent is None]
+    if len(roots) > 1 and not allow_panel:
+        raise PCBImportError("Multiple board exteriors require panel preview mode")
+    boards = []
+    for i in sorted(roots, key=lambda i: polygons[i].bounds):
+        outer = polygons[i]
+        holes = [p.exterior.coords for p, parent in zip(polygons, parents) if parent == i]
+        board = Polygon(outer.exterior.coords, holes)
+        if not board.is_valid or board.area <= 0:
+            raise PCBImportError("Invalid board material polygon")
+        boards.append(BoardOutline(source, _ring(board.exterior.coords),
+                                   tuple(_ring(h.coords) for h in board.interiors)))
+    if not boards:
+        raise PCBImportError("No board exterior")
+    return boards[0] if len(boards) == 1 else PanelOutline(source, tuple(boards))

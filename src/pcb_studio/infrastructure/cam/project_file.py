@@ -9,6 +9,7 @@ import tempfile
 
 from pcb_studio.application.import_project import import_project
 from pcb_studio.domain.work_frame import WorkFrame
+from pcb_studio.domain.pcb import PanelOutline
 from pcb_studio.domain.depth import DepthSetup, validate_depth
 from pcb_studio.domain.tools import ProcessSettings
 from pcb_studio.infrastructure.cam.gerbonara_adapter import GerbonaraImporter
@@ -74,12 +75,18 @@ def import_sources(name,sources):
                 drills.append(path)
             else:
                 outline=path
-        project=import_project(GerbonaraImporter(),name,copper_files=tuple(copper),
+        project=import_project(GerbonaraImporter(allow_panel=True),name,copper_files=tuple(copper),
                                drill_files=tuple(drills),outline_file=outline)
+        profile=project.outline
+        if isinstance(profile, PanelOutline):
+            label=labels[profile.source]
+            profile=replace(profile,source=label,boards=tuple(replace(b,source=label) for b in profile.boards))
+        elif profile is not None:
+            profile=replace(profile,source=labels[profile.source])
         return replace(project,
             copper=tuple(replace(layer,source=labels[layer.source]) for layer in project.copper),
             drills=tuple(replace(layer,source=labels[layer.source]) for layer in project.drills),
-            outline=replace(project.outline,source=labels[project.outline.source]) if project.outline else None)
+            outline=profile)
 
 
 def cam_settings(data):

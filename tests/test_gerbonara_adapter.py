@@ -346,3 +346,24 @@ def test_kicad_warning_filter_is_specific(tmp_path):
     assert not _known_kicad_absolute_warning(p,SimpleNamespace(message="Unknown tool"))
     p.write_text(text.replace("G05","G05\nG91"),encoding="ascii")
     assert not _known_kicad_absolute_warning(p,benign)
+
+
+def test_panel_opt_in_preserves_separate_boards_and_hole(tmp_path):
+    from pcb_studio.domain.pcb import PanelOutline
+    p = gerber(tmp_path, "%ADD10C,0.05*%\nD10*\n" +
+               "\n".join(rectangle_loop(*r) for r in [(5,-8,10,4),(7,-7,2,1),(-8,-8,10,4)]))
+    with pytest.raises(PCBImportError):
+        GerbonaraImporter().outline(p)
+    panel=GerbonaraImporter(allow_panel=True).outline(p)
+    assert isinstance(panel,PanelOutline)
+    assert len(panel.boards)==2
+    shapes=[Polygon(b.exterior,b.holes) for b in panel.boards]
+    assert sorted(s.area for s in shapes)==pytest.approx([38,40])
+    assert shapes[0].disjoint(shapes[1])
+
+
+@pytest.mark.parametrize("other",[(0,3,2,2),(29,3,2,2),(0,0,30,20)])
+def test_panel_still_rejects_invalid_intersections(tmp_path,other):
+    p=gerber(tmp_path,"%ADD10C,0.05*%\nD10*\n"+rectangle_loop(0,0,30,20)+"\n"+rectangle_loop(*other))
+    with pytest.raises(PCBImportError):
+        GerbonaraImporter(allow_panel=True).outline(p)

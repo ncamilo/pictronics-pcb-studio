@@ -14,6 +14,7 @@ from pcb_studio.presentation.import_dialog import ImportDialog
 from pcb_studio.presentation.cam_dialog import CamDialog
 from pcb_studio.presentation.nc_dialog import NcDialog
 from pcb_studio.domain.work_frame import WorkFrame,corner_frame
+from pcb_studio.domain.pcb import BoardOutline, PanelOutline, outline_boards
 from pcb_studio.presentation.work_frame_dialog import WorkFrameDialog
 
 
@@ -237,7 +238,8 @@ class StudioWindow(QWidget):
         entries += [(("drill",i),f"Drill layer / {len(layer.drills)} holes / {len(layer.slots)} slots")
                     for i,layer in enumerate(project.drills)]
         if project.outline:
-            entries.append((("outline",0),"Board outline"))
+            label=f"Panel outline / {len(project.outline.boards)} boards" if isinstance(project.outline,PanelOutline) else "Board outline"
+            entries.append((("outline",0),label))
         for key,label in entries:
             item=QTreeWidgetItem(root,[label])
             item.setData(0,Qt.ItemDataRole.UserRole,key)
@@ -250,11 +252,16 @@ class StudioWindow(QWidget):
         self.coords.setText("X  —\nY  —\nZ  —")
         self.detail.setText("Imported geometry only")
         self.diagnostics.setText("CAM not planned"+("\nOutline not supplied" if project.outline is None else ""))
-        self.message.setText("Import complete | No toolpaths generated | Not manufacturing-ready")
+        if isinstance(project.outline,PanelOutline):
+            self.detail.setText(f"Panel: {len(project.outline.boards)} boards")
+            self.diagnostics.setText("Panel CAM not implemented; inspection and saving only")
+            self.message.setText("Panel imported | No toolpaths generated | OFFLINE ONLY")
+        else:
+            self.message.setText("Import complete | No toolpaths generated | Not manufacturing-ready")
         self.refresh()
 
     def outline_bounds(self):
-        xs,ys=zip(*self.project.outline.exterior)
+        xs,ys=zip(*(xy for board in outline_boards(self.project.outline) for xy in board.exterior))
         return min(xs),min(ys),max(xs),max(ys)
 
     def set_work_frame(self,frame):
@@ -273,7 +280,7 @@ class StudioWindow(QWidget):
             self.message.setText("Work XY updated | Source view unchanged | Applies to all exported stages")
 
     def open_cam(self):
-        if self.project is None:
+        if self.project is None or not isinstance(self.project.outline,BoardOutline):
             return
         dialog=CamDialog(self.project,self)
         if self.cam_geometry is not None:
@@ -444,7 +451,7 @@ class StudioWindow(QWidget):
     def refresh(self,*_):
         self.save_project_button.setEnabled(bool(self.project_sources))
         self.work_setup.setEnabled(self.project is not None and self.project.outline is not None)
-        self.plan_cam.setEnabled(self.project is not None and self.project.outline is not None)
+        self.plan_cam.setEnabled(self.project is not None and isinstance(self.project.outline,BoardOutline))
         self.save_cam.setEnabled(self.cam_geometry is not None)
         self.save_nc.setEnabled(self.cam_job is not None)
         self.previous.setEnabled(self.data is not None and self.slider.value()>0)

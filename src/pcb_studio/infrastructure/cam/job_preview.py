@@ -75,6 +75,8 @@ def plan_job_preview(project: PCBProject, stock: BoardOutline, *,
         raise ValueError("Expected named PCBProject")
     if project.outline is None:
         raise ValueError("Board outline required")
+    if not isinstance(project.outline, BoardOutline):
+        raise ValueError("Panel CAM is not implemented; inspection only")
     if len(project.copper) != 1:
         raise ValueError("Job preview requires exactly one copper side")
     if not isinstance(stock, BoardOutline):

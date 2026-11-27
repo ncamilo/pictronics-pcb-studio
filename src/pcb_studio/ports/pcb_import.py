@@ -1,7 +1,7 @@
 """Import port independent of Gerbonara and Shapely."""
 from pathlib import Path
 from typing import Literal, Protocol
-from pcb_studio.domain.pcb import BoardOutline, CopperLayer, DrillLayer
+from pcb_studio.domain.pcb import BoardOutline, PanelOutline, CopperLayer, DrillLayer
 
 
 class PCBImportError(ValueError):
@@ -11,4 +11,4 @@ class PCBImportError(ValueError):
 class PCBImporter(Protocol):
     def copper(self, path: Path, side: Literal["top", "bottom"]) -> CopperLayer: ...
     def drills(self, path: Path) -> DrillLayer: ...
-    def outline(self, path: Path) -> BoardOutline: ...
+    def outline(self, path: Path) -> BoardOutline | PanelOutline: ...
